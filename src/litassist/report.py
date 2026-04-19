@@ -46,6 +46,35 @@ def render_markdown(run: SearchRun) -> str:
     for source, query in plan.queries.items():
         lines.append(f"- `{source}`: {query}")
 
+    if plan.research_questions:
+        lines.extend(["", "## Research Questions", ""])
+        for question in plan.research_questions:
+            lines.append(f"- {question}")
+
+    if plan.core_concepts:
+        lines.extend(["", "## Core Concepts", ""])
+        for concept in plan.core_concepts:
+            label = " / ".join(
+                item
+                for item in [concept.get("label_zh"), concept.get("label_en")]
+                if item
+            )
+            zh_syn = ", ".join(concept.get("synonyms_zh", []))
+            en_syn = ", ".join(concept.get("synonyms_en", []))
+            suffix = "; ".join(item for item in [zh_syn, en_syn] if item)
+            lines.append(f"- {label}{': ' + suffix if suffix else ''}")
+
+    if plan.inclusion_criteria or plan.exclusion_criteria:
+        lines.extend(["", "## Screening Criteria", ""])
+        if plan.inclusion_criteria:
+            lines.append("Inclusion:")
+            for item in plan.inclusion_criteria:
+                lines.append(f"- {item}")
+        if plan.exclusion_criteria:
+            lines.append("Exclusion:")
+            for item in plan.exclusion_criteria:
+                lines.append(f"- {item}")
+
     if run.errors:
         lines.extend(["", "## Source Errors", ""])
         for source, error in run.errors.items():

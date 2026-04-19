@@ -15,3 +15,4 @@ def test_render_markdown_contains_results():
 
     assert "Useful Paper" in rendered
     assert "Total after dedupe: 1" in rendered
+    assert "Research Questions" in rendered

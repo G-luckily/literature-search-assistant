@@ -124,6 +124,15 @@ def build_plan(
             "cnki": cnki_query,
         },
         notes=notes,
+        planner="rules",
+        research_questions=[need],
+        core_concepts=_concepts(zh, en),
+        inclusion_criteria=[],
+        exclusion_criteria=[],
+        search_strategy=[
+            "Use API-friendly sources first, then confirm platform-specific searches manually.",
+            "Review high-relevance records before importing to Zotero.",
+        ],
     )
 
 
@@ -182,3 +191,13 @@ def _dedupe(items: list[str]) -> list[str]:
         seen.add(key)
         result.append(normalized)
     return result
+
+
+def _concepts(zh_terms: list[str], en_terms: list[str]) -> list[dict[str, str]]:
+    concepts = []
+    for index, zh_term in enumerate(zh_terms[:8]):
+        en_term = COMMON_TRANSLATIONS.get(zh_term)
+        if not en_term and index < len(en_terms):
+            en_term = en_terms[index]
+        concepts.append({"label_zh": zh_term, "label_en": en_term or ""})
+    return concepts

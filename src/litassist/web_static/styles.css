@@ -137,7 +137,8 @@ fieldset {
 }
 
 fieldset label,
-.zotero-row label {
+.zotero-row label,
+.llm-toggle {
   font-weight: 600;
   color: var(--muted);
 }
@@ -224,16 +225,33 @@ button:disabled {
   gap: 12px;
 }
 
-.keyword-group {
+.plan-detail-output {
+  display: grid;
+  gap: 12px;
+}
+
+.keyword-group,
+.detail-box {
   border-left: 4px solid var(--teal);
   padding: 12px 14px;
   background: var(--paper);
   box-shadow: var(--shadow);
 }
 
-.keyword-group h3 {
+.keyword-group h3,
+.detail-box h3 {
   font-size: 15px;
   margin-bottom: 8px;
+}
+
+.detail-box ul {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.55;
+}
+
+.detail-box li + li {
+  margin-top: 6px;
 }
 
 .chips {

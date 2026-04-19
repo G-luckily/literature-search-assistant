@@ -11,6 +11,12 @@ class ResearchPlan:
     en_keywords: list[str]
     queries: dict[str, str]
     notes: list[str] = field(default_factory=list)
+    planner: str = "rules"
+    research_questions: list[str] = field(default_factory=list)
+    core_concepts: list[dict[str, Any]] = field(default_factory=list)
+    inclusion_criteria: list[str] = field(default_factory=list)
+    exclusion_criteria: list[str] = field(default_factory=list)
+    search_strategy: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

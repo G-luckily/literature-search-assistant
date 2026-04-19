@@ -29,6 +29,16 @@ class WebOfScienceConfig:
 
 
 @dataclass(slots=True)
+class LLMConfig:
+    provider: str = "openai"
+    enabled: bool = False
+    api_key: str = ""
+    model: str = "gpt-4.1-mini"
+    endpoint: str = "https://api.openai.com/v1/responses"
+    request_timeout_seconds: float = 45
+
+
+@dataclass(slots=True)
 class ZoteroConfig:
     library_id: str = ""
     library_type: str = "user"
@@ -41,6 +51,7 @@ class AppConfig:
     general: GeneralConfig = field(default_factory=GeneralConfig)
     semantic_scholar: SemanticScholarConfig = field(default_factory=SemanticScholarConfig)
     web_of_science: WebOfScienceConfig = field(default_factory=WebOfScienceConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
     zotero: ZoteroConfig = field(default_factory=ZoteroConfig)
 
 
@@ -56,6 +67,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     general = GeneralConfig(**data.get("general", {}))
     semantic_scholar = SemanticScholarConfig(**data.get("semantic_scholar", {}))
     web_of_science = WebOfScienceConfig(**data.get("web_of_science", {}))
+    llm = LLMConfig(**data.get("llm", {}))
     zotero = ZoteroConfig(**data.get("zotero", {}))
 
     general.contact_email = os.getenv("LITASSIST_CONTACT_EMAIL", general.contact_email)
@@ -67,10 +79,20 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "SEMANTIC_SCHOLAR_API_KEY", semantic_scholar.api_key
     )
     web_of_science.api_key = os.getenv("WOS_API_KEY", web_of_science.api_key)
+    llm.api_key = os.getenv("OPENAI_API_KEY", llm.api_key)
+    llm.model = os.getenv("OPENAI_MODEL", llm.model)
+    if os.getenv("LITASSIST_LLM_ENABLED"):
+        llm.enabled = os.getenv("LITASSIST_LLM_ENABLED", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
     return AppConfig(
         general=general,
         semantic_scholar=semantic_scholar,
         web_of_science=web_of_science,
+        llm=llm,
         zotero=zotero,
     )

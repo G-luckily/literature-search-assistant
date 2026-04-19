@@ -17,7 +17,7 @@ The project turns a natural-language research need into a reproducible literatur
 
 ```mermaid
 flowchart LR
-    A["User need"] --> B["Planner"]
+    A["User need"] --> B["Rule/LLM Planner"]
     B --> C["Source queries"]
     C --> D["OpenAlex"]
     C --> E["Crossref"]
@@ -34,6 +34,7 @@ flowchart LR
 ## Module Boundaries
 
 - `planner.py`: deterministic first-pass need decomposition and query generation.
+- `llm_planner.py`: optional OpenAI structured-output planning with rule fallback.
 - `search/`: one adapter per academic source.
 - `dedupe.py`: DOI-first and title-fallback duplicate merging.
 - `enrich.py`: relevance scoring, PDF link cleanup, and open-access link enrichment.

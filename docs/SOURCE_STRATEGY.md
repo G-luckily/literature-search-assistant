@@ -10,6 +10,15 @@
 
 The project should not implement bypasses for paywalls, CAPTCHA, access controls, or institutional download limits.
 
+## Query Planning
+
+The planner has two modes:
+
+- Rule mode: deterministic bilingual keyword extraction, always available offline.
+- LLM mode: optional structured research-question decomposition using an OpenAI API key.
+
+LLM mode should produce research questions, concept groups, inclusion/exclusion criteria, and source-specific search strings. It must remain optional so the search pipeline is still usable without external model credentials.
+
 ## Zotero
 
 Use Zotero as the final library of record.

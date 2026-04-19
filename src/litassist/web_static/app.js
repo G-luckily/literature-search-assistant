@@ -16,12 +16,14 @@ const els = {
   searchButton: document.querySelector("#search-button"),
   dryRunButton: document.querySelector("#dry-run-button"),
   applyImport: document.querySelector("#apply-import"),
+  useLlm: document.querySelector("#use-llm"),
   filterText: document.querySelector("#filter-text"),
   pdfOnly: document.querySelector("#pdf-only"),
   sortBy: document.querySelector("#sort-by"),
   selectVisible: document.querySelector("#select-visible"),
   clearSelection: document.querySelector("#clear-selection"),
   keywordOutput: document.querySelector("#keyword-output"),
+  planDetailOutput: document.querySelector("#plan-detail-output"),
   errorOutput: document.querySelector("#error-output"),
   papers: document.querySelector("#papers"),
   paperCount: document.querySelector("#paper-count"),
@@ -44,6 +46,7 @@ function payloadBase() {
     need: els.need.value.trim(),
     zhKeywords: splitKeywords(els.zhKeywords.value),
     enKeywords: splitKeywords(els.enKeywords.value),
+    useLlm: els.useLlm.checked,
   };
 }
 
@@ -151,10 +154,66 @@ function renderPlan(plan) {
   if (!plan) return;
   els.keywordOutput.innerHTML = "";
   els.keywordOutput.append(
+    plannerGroup(plan),
     keywordGroup("中文关键词", plan.zh_keywords || []),
     keywordGroup("English keywords", plan.en_keywords || []),
     queryGroup(plan.queries || {}),
   );
+  renderPlanDetails(plan);
+}
+
+function plannerGroup(plan) {
+  const box = document.createElement("section");
+  box.className = "keyword-group";
+  box.innerHTML = `<h3>拆解方式</h3><p>${escapeHtml(plan.planner === "llm" ? "LLM 结构化拆解" : "规则拆解")}</p>`;
+  return box;
+}
+
+function renderPlanDetails(plan) {
+  els.planDetailOutput.innerHTML = "";
+  const fragments = [];
+  fragments.push(detailList("研究问题", plan.research_questions || []));
+  fragments.push(conceptList(plan.core_concepts || []));
+  fragments.push(detailList("纳入标准", plan.inclusion_criteria || []));
+  fragments.push(detailList("排除标准", plan.exclusion_criteria || []));
+  fragments.push(detailList("检索策略", plan.search_strategy || []));
+  for (const fragment of fragments) {
+    if (fragment) els.planDetailOutput.append(fragment);
+  }
+}
+
+function detailList(title, items) {
+  if (!items.length) return null;
+  const box = document.createElement("section");
+  box.className = "detail-box";
+  box.innerHTML = `<h3>${escapeHtml(title)}</h3>`;
+  const list = document.createElement("ul");
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.textContent = item;
+    list.append(li);
+  }
+  box.append(list);
+  return box;
+}
+
+function conceptList(concepts) {
+  if (!concepts.length) return null;
+  const box = document.createElement("section");
+  box.className = "detail-box";
+  box.innerHTML = "<h3>核心概念</h3>";
+  const list = document.createElement("ul");
+  for (const concept of concepts) {
+    const zh = concept.label_zh || "";
+    const en = concept.label_en || "";
+    const zhSyn = (concept.synonyms_zh || []).join("，");
+    const enSyn = (concept.synonyms_en || []).join(", ");
+    const li = document.createElement("li");
+    li.textContent = [zh, en, zhSyn, enSyn].filter(Boolean).join(" / ");
+    list.append(li);
+  }
+  box.append(list);
+  return box;
 }
 
 function keywordGroup(title, keywords) {

@@ -5,8 +5,7 @@ import json
 from pathlib import Path
 
 from .config import load_config
-from .pipeline import run_search
-from .planner import build_plan
+from .pipeline import _build_search_plan, run_search
 from .report import load_papers, write_json, write_run
 from .web import find_free_port, serve
 from .zotero import import_papers
@@ -21,6 +20,8 @@ def main(argv: list[str] | None = None) -> None:
 
     plan_parser = subparsers.add_parser("plan", help="Build a search plan.")
     plan_parser.add_argument("need")
+    plan_parser.add_argument("--config", default=None)
+    plan_parser.add_argument("--llm", action="store_true", help="Use LLM planning.")
     _add_keyword_args(plan_parser)
     plan_parser.add_argument("--out", help="Optional JSON output path.")
 
@@ -29,6 +30,7 @@ def main(argv: list[str] | None = None) -> None:
     search_parser.add_argument("--config", default=None)
     search_parser.add_argument("--out", default="runs/latest")
     search_parser.add_argument("--limit", type=int, default=None)
+    search_parser.add_argument("--llm", action="store_true", help="Use LLM planning.")
     search_parser.add_argument(
         "--source",
         action="append",
@@ -57,10 +59,13 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "plan":
-        plan = build_plan(
+        config = load_config(args.config)
+        plan = _build_search_plan(
             args.need,
+            config=config,
             zh_keywords=args.zh_keyword,
             en_keywords=args.en_keyword,
+            use_llm=args.llm,
         )
         payload = plan.to_dict()
         if args.out:
@@ -77,6 +82,7 @@ def main(argv: list[str] | None = None) -> None:
             limit=args.limit,
             zh_keywords=args.zh_keyword,
             en_keywords=args.en_keyword,
+            use_llm=args.llm,
         )
         write_run(run, args.out)
         print(f"Wrote {len(run.papers)} deduped papers to {Path(args.out).resolve()}")

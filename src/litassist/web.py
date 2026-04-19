@@ -13,8 +13,7 @@ from urllib.parse import unquote, urlparse
 
 from .config import AppConfig, load_config
 from .models import Paper
-from .pipeline import run_search
-from .planner import build_plan
+from .pipeline import _build_search_plan, run_search
 from .report import write_run
 from .zotero import import_papers
 
@@ -69,10 +68,12 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_plan(self, payload: dict[str, Any]) -> None:
         need = _required_text(payload, "need")
-        plan = build_plan(
+        plan = _build_search_plan(
             need,
+            config=self.server.config,
             zh_keywords=_list_of_text(payload.get("zhKeywords")),
             en_keywords=_list_of_text(payload.get("enKeywords")),
+            use_llm=bool(payload.get("useLlm")),
         )
         self._json({"plan": plan.to_dict()})
 
@@ -88,6 +89,7 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             limit=limit,
             zh_keywords=_list_of_text(payload.get("zhKeywords")),
             en_keywords=_list_of_text(payload.get("enKeywords")),
+            use_llm=bool(payload.get("useLlm")),
         )
         run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
         out_dir = self.server.project_root / "runs" / "web" / run_id

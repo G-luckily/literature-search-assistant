@@ -5,6 +5,7 @@
 当前版本先实现稳定链路：
 
 - 需求拆解和中英文关键词生成
+- 可选 LLM 结构化拆解研究问题、核心概念、纳入/排除标准
 - OpenAlex、Crossref、Semantic Scholar 检索
 - DOI / 标题去重
 - 开放全文链接增强和伪 PDF 链接清理
@@ -36,7 +37,19 @@ uv run litassist web
 
 浏览器打开 `http://127.0.0.1:8765`。如果端口被占用，程序会自动换一个可用端口并在终端打印地址。
 
-界面里可以筛选候选文献、只看可获取全文的条目、按相关性/年份/引用排序，并选择部分文献导入 Zotero。默认“导入选中项”是预演；勾选“写入 Zotero”后才会真实写入。
+界面里可以选择是否使用 LLM 拆解研究问题，筛选候选文献、只看可获取全文的条目、按相关性/年份/引用排序，并选择部分文献导入 Zotero。默认“导入选中项”是预演；勾选“写入 Zotero”后才会真实写入。
+
+## LLM 研究需求拆解
+
+默认使用离线规则拆解，不需要 API key。要启用 LLM 拆解，设置环境变量或编辑 `config.toml`：
+
+```powershell
+$env:OPENAI_API_KEY="你的 OpenAI API Key"
+$env:LITASSIST_LLM_ENABLED="true"
+uv run litassist plan "你的研究需求" --llm
+```
+
+或在前端勾选“使用 LLM 拆解研究问题”。没有可用 API key 时会自动回退到规则模式。
 
 ## 导入 Zotero
 
@@ -78,8 +91,7 @@ MVP 默认使用 API 友好的来源：
 
 建议按这个顺序推进：
 
-1. 接入 LLM 需求拆解模块，替换当前规则式关键词生成。
-2. 接入 Web of Science Starter/Expanded API。
-3. 增加 CNKI 题录导出解析与 `translators_CN` 复用。
-4. 增加 Zotero Translation Server sidecar，用 URL 自动补元数据。
-5. 做本地 Web UI：任务列表、筛选确认、导入状态。
+1. 接入 Web of Science Starter/Expanded API。
+2. 增加 CNKI 题录导出解析与 `translators_CN` 复用。
+3. 增加 Zotero Translation Server sidecar，用 URL 自动补元数据。
+4. 增加任务历史、筛选记录和导入状态追踪。

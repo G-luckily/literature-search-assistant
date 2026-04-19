@@ -8,6 +8,7 @@ from .config import load_config
 from .pipeline import run_search
 from .planner import build_plan
 from .report import load_papers, write_json, write_run
+from .web import find_free_port, serve
 from .zotero import import_papers
 
 
@@ -47,6 +48,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Actually write to Zotero. Without this flag the command is a dry run.",
     )
+
+    web_parser = subparsers.add_parser("web", help="Start the local web interface.")
+    web_parser.add_argument("--config", default=None)
+    web_parser.add_argument("--host", default="127.0.0.1")
+    web_parser.add_argument("--port", type=int, default=8765)
 
     args = parser.parse_args(argv)
 
@@ -94,6 +100,11 @@ def main(argv: list[str] | None = None) -> None:
         )
         for error in result.errors:
             print(f"- {error}")
+        return
+
+    if args.command == "web":
+        port = find_free_port(args.host, args.port)
+        serve(host=args.host, port=port, config_path=args.config)
         return
 
 

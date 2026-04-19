@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Literature Search Assistant</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="input-pane" aria-labelledby="request-title">
+        <div class="brand-row">
+          <img
+            src="https://images.unsplash.com/photo-1495446815901-a7297e633e8d?auto=format&fit=crop&w=500&q=80"
+            alt="书架与研究资料"
+          />
+          <div>
+            <p class="eyebrow">Zotero Literature Assistant</p>
+            <h1 id="request-title">研究入口</h1>
+          </div>
+        </div>
+
+        <label for="need">研究需求</label>
+        <textarea id="need" rows="7">人工智能辅助文献检索 Zotero 文献管理</textarea>
+
+        <div class="field-grid">
+          <label>
+            中文关键词
+            <input id="zh-keywords" placeholder="可选，用逗号分隔" />
+          </label>
+          <label>
+            English keywords
+            <input id="en-keywords" placeholder="Optional, comma separated" />
+          </label>
+        </div>
+
+        <fieldset>
+          <legend>检索来源</legend>
+          <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
+          <label><input type="checkbox" name="source" value="crossref" checked /> Crossref</label>
+          <label><input type="checkbox" name="source" value="semantic_scholar" /> Semantic Scholar</label>
+          <label><input type="checkbox" name="source" value="web_of_science" /> Web of Science</label>
+        </fieldset>
+
+        <label class="limit-label">
+          每源数量
+          <input id="limit" type="number" min="1" max="50" value="8" />
+        </label>
+
+        <div class="actions">
+          <button id="plan-button" type="button">生成检索计划</button>
+          <button id="search-button" type="button" class="primary">开始检索</button>
+        </div>
+
+        <div class="zotero-row">
+          <button id="dry-run-button" type="button" disabled>导入 Zotero 预演</button>
+          <label><input id="apply-import" type="checkbox" /> 写入 Zotero</label>
+        </div>
+
+        <p id="status" class="status" role="status">准备好了。</p>
+      </section>
+
+      <section class="results-pane" aria-live="polite">
+        <div class="summary-band">
+          <div>
+            <p class="eyebrow">Plan</p>
+            <h2>关键词与检索式</h2>
+          </div>
+          <span id="paper-count" class="count-pill">0 篇</span>
+        </div>
+
+        <div id="keyword-output" class="keyword-output">
+          <p>先生成计划，或直接开始检索。</p>
+        </div>
+
+        <div id="error-output" class="error-output" hidden></div>
+
+        <div class="section-heading">
+          <h2>候选文献</h2>
+          <a id="report-link" href="#" target="_blank" hidden>打开报告</a>
+        </div>
+        <div id="papers" class="papers"></div>
+      </section>
+    </main>
+
+    <template id="paper-template">
+      <article class="paper-card">
+        <div class="paper-meta-line"></div>
+        <h3></h3>
+        <p class="authors"></p>
+        <p class="abstract"></p>
+        <div class="paper-links"></div>
+      </article>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -24,6 +24,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/litassist"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/litassist/web_static" = "litassist/web_static"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

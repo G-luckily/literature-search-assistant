@@ -41,7 +41,9 @@ uv run litassist web
 
 ## LLM 研究需求拆解
 
-默认使用离线规则拆解，不需要 API key。要启用 LLM 拆解，设置环境变量或编辑 `config.toml`：
+默认使用离线规则拆解，不需要 API key。要启用 LLM 拆解，设置环境变量或编辑 `config.toml`。
+
+OpenAI 示例：
 
 ```powershell
 $env:OPENAI_API_KEY="你的 OpenAI API Key"
@@ -49,7 +51,30 @@ $env:LITASSIST_LLM_ENABLED="true"
 uv run litassist plan "你的研究需求" --llm
 ```
 
-或在前端勾选“使用 LLM 拆解研究问题”。没有可用 API key 时会自动回退到规则模式。
+DeepSeek 示例：
+
+```powershell
+$env:LITASSIST_LLM_PROVIDER="deepseek"
+$env:DEEPSEEK_API_KEY="你的 DeepSeek API Key"
+$env:DEEPSEEK_MODEL="deepseek-chat"
+$env:DEEPSEEK_BASE_URL="https://api.deepseek.com/v1"
+$env:LITASSIST_LLM_ENABLED="true"
+uv run litassist plan "你的研究需求" --llm
+```
+
+也可以在 `config.toml` 中配置：
+
+```toml
+[llm]
+enabled = true
+provider = "deepseek"
+api_key = ""
+model = "deepseek-chat"
+endpoint = "https://api.deepseek.com/v1"
+request_timeout_seconds = 45
+```
+
+建议把密钥放在 `DEEPSEEK_API_KEY` 环境变量里，而不是写入配置文件。或在前端勾选“使用 LLM 拆解研究问题”。没有可用 API key 时会自动回退到规则模式。
 
 ## 导入 Zotero
 

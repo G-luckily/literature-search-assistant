@@ -67,7 +67,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     general = GeneralConfig(**data.get("general", {}))
     semantic_scholar = SemanticScholarConfig(**data.get("semantic_scholar", {}))
     web_of_science = WebOfScienceConfig(**data.get("web_of_science", {}))
-    llm = LLMConfig(**data.get("llm", {}))
+    llm_data = data.get("llm", {})
+    llm = LLMConfig(**llm_data)
     zotero = ZoteroConfig(**data.get("zotero", {}))
 
     general.contact_email = os.getenv("LITASSIST_CONTACT_EMAIL", general.contact_email)
@@ -79,8 +80,22 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "SEMANTIC_SCHOLAR_API_KEY", semantic_scholar.api_key
     )
     web_of_science.api_key = os.getenv("WOS_API_KEY", web_of_science.api_key)
-    llm.api_key = os.getenv("OPENAI_API_KEY", llm.api_key)
-    llm.model = os.getenv("OPENAI_MODEL", llm.model)
+    llm.provider = os.getenv("LITASSIST_LLM_PROVIDER", llm.provider).strip().lower()
+    if llm.provider == "deepseek":
+        if "model" not in llm_data and not os.getenv("DEEPSEEK_MODEL"):
+            llm.model = "deepseek-chat"
+        if "endpoint" not in llm_data and not os.getenv("DEEPSEEK_BASE_URL"):
+            llm.endpoint = "https://api.deepseek.com/v1"
+        llm.api_key = os.getenv("DEEPSEEK_API_KEY", llm.api_key)
+        llm.model = os.getenv("DEEPSEEK_MODEL", llm.model)
+        llm.endpoint = os.getenv("DEEPSEEK_BASE_URL", llm.endpoint)
+    else:
+        llm.api_key = os.getenv("OPENAI_API_KEY", llm.api_key)
+        llm.model = os.getenv("OPENAI_MODEL", llm.model)
+        llm.endpoint = os.getenv("OPENAI_RESPONSES_ENDPOINT", llm.endpoint)
+    llm.api_key = os.getenv("LITASSIST_LLM_API_KEY", llm.api_key)
+    llm.model = os.getenv("LITASSIST_LLM_MODEL", llm.model)
+    llm.endpoint = os.getenv("LITASSIST_LLM_ENDPOINT", llm.endpoint)
     if os.getenv("LITASSIST_LLM_ENABLED"):
         llm.enabled = os.getenv("LITASSIST_LLM_ENABLED", "").lower() in {
             "1",

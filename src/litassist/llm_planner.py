@@ -20,12 +20,23 @@ def build_llm_plan(
     zh_keywords: list[str] | None = None,
     en_keywords: list[str] | None = None,
 ) -> ResearchPlan:
-    if config.provider != "openai":
-        raise LLMPlannerError(f"Unsupported LLM provider: {config.provider}")
+    provider = config.provider.strip().lower()
+    seed = build_plan(need, zh_keywords=zh_keywords, en_keywords=en_keywords)
+    if provider == "openai":
+        return _build_openai_plan(need, config, seed)
+    if provider == "deepseek":
+        return _build_deepseek_plan(need, config, seed)
+    raise LLMPlannerError(f"Unsupported LLM provider: {config.provider}")
+
+
+def _build_openai_plan(
+    need: str,
+    config: LLMConfig,
+    seed: ResearchPlan,
+) -> ResearchPlan:
     if not config.api_key:
         raise LLMPlannerError("OPENAI_API_KEY is required for LLM planning.")
 
-    seed = build_plan(need, zh_keywords=zh_keywords, en_keywords=en_keywords)
     payload = {
         "model": config.model,
         "input": [
@@ -35,15 +46,7 @@ def build_llm_plan(
             },
             {
                 "role": "user",
-                "content": json.dumps(
-                    {
-                        "need": need,
-                        "seed_zh_keywords": seed.zh_keywords,
-                        "seed_en_keywords": seed.en_keywords,
-                        "seed_queries": seed.queries,
-                    },
-                    ensure_ascii=False,
-                ),
+                "content": json.dumps(_seed_payload(need, seed), ensure_ascii=False),
             },
         ],
         "text": {
@@ -72,6 +75,59 @@ def build_llm_plan(
     return _plan_from_payload(need, parsed, seed)
 
 
+def _build_deepseek_plan(
+    need: str,
+    config: LLMConfig,
+    seed: ResearchPlan,
+) -> ResearchPlan:
+    if not config.api_key:
+        raise LLMPlannerError("DEEPSEEK_API_KEY is required for LLM planning.")
+
+    payload = {
+        "model": config.model,
+        "messages": [
+            {
+                "role": "system",
+                "content": _deepseek_system_prompt(),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(_seed_payload(need, seed), ensure_ascii=False),
+            },
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+        "max_tokens": 2500,
+    }
+    headers = {
+        "Authorization": f"Bearer {config.api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        with httpx.Client(timeout=config.request_timeout_seconds) as client:
+            response = client.post(
+                _chat_completions_endpoint(config.endpoint),
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPError as exc:
+        raise LLMPlannerError(f"DeepSeek planning request failed: {exc}") from exc
+
+    parsed = _extract_chat_json(data)
+    return _plan_from_payload(need, parsed, seed)
+
+
+def _seed_payload(need: str, seed: ResearchPlan) -> dict[str, Any]:
+    return {
+        "need": need,
+        "seed_zh_keywords": seed.zh_keywords,
+        "seed_en_keywords": seed.en_keywords,
+        "seed_queries": seed.queries,
+    }
+
+
 def _system_prompt() -> str:
     return (
         "You are an expert research librarian. Produce a rigorous bilingual literature "
@@ -81,6 +137,15 @@ def _system_prompt() -> str:
         "For CNKI use Chinese subject/title keyword style. For Web of Science use TS=() "
         "Boolean syntax. For OpenAlex, Crossref, and Semantic Scholar use concise natural "
         "language keyword queries."
+    )
+
+
+def _deepseek_system_prompt() -> str:
+    return (
+        f"{_system_prompt()}\n"
+        "Return a single valid JSON object only, with no Markdown fences or prose. "
+        "The JSON object must follow this contract: "
+        f"{json.dumps(_schema(), ensure_ascii=False)}"
     )
 
 
@@ -157,15 +222,79 @@ def _schema() -> dict[str, Any]:
 def _extract_json(response: dict[str, Any]) -> dict[str, Any]:
     output_text = response.get("output_text")
     if isinstance(output_text, str) and output_text.strip():
-        return json.loads(output_text)
+        return _loads_json_object(output_text)
 
     for item in response.get("output", []):
         for content in item.get("content", []):
             text = content.get("text")
             if isinstance(text, str) and text.strip():
-                return json.loads(text)
+                return _loads_json_object(text)
 
     raise LLMPlannerError("OpenAI response did not include JSON output text.")
+
+
+def _extract_chat_json(response: dict[str, Any]) -> dict[str, Any]:
+    choices = response.get("choices")
+    if not isinstance(choices, list):
+        raise LLMPlannerError("DeepSeek response did not include choices.")
+
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return _loads_json_object(content)
+        if isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                text = part.get("text") or part.get("content")
+                if isinstance(text, str) and text.strip():
+                    return _loads_json_object(text)
+
+    raise LLMPlannerError("DeepSeek response did not include JSON content.")
+
+
+def _loads_json_object(text: str) -> dict[str, Any]:
+    stripped = _strip_json_fence(text.strip())
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                payload = json.loads(stripped[start : end + 1])
+            except json.JSONDecodeError as nested_exc:
+                raise LLMPlannerError(
+                    "LLM response was not valid JSON."
+                ) from nested_exc
+        else:
+            raise LLMPlannerError("LLM response was not valid JSON.") from exc
+    if not isinstance(payload, dict):
+        raise LLMPlannerError("LLM response JSON was not an object.")
+    return payload
+
+
+def _strip_json_fence(text: str) -> str:
+    if not text.startswith("```"):
+        return text
+    lines = text.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _chat_completions_endpoint(endpoint: str) -> str:
+    clean = endpoint.rstrip("/")
+    if clean.endswith("/chat/completions"):
+        return clean
+    return f"{clean}/chat/completions"
 
 
 def _plan_from_payload(
@@ -175,7 +304,9 @@ def _plan_from_payload(
 ) -> ResearchPlan:
     zh_keywords = _strings(payload.get("zh_keywords")) or seed.zh_keywords
     en_keywords = _strings(payload.get("en_keywords")) or seed.en_keywords
-    queries_payload = payload.get("queries") if isinstance(payload.get("queries"), dict) else {}
+    queries_payload = (
+        payload.get("queries") if isinstance(payload.get("queries"), dict) else {}
+    )
     queries = {
         key: str(queries_payload.get(key) or seed.queries[key])
         for key in seed.queries

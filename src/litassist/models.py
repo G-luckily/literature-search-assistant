@@ -30,6 +30,9 @@ class Paper:
     external_id: str | None = None
     cited_by_count: int | None = None
     score: float | None = None
+    relevance_score: float | None = None
+    relevance_reasons: list[str] = field(default_factory=list)
+    oa_status: str | None = None
     sources: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)

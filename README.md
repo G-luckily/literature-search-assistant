@@ -7,6 +7,8 @@
 - 需求拆解和中英文关键词生成
 - OpenAlex、Crossref、Semantic Scholar 检索
 - DOI / 标题去重
+- 开放全文链接增强和伪 PDF 链接清理
+- 相关性评分、结果筛选和选中文献导入
 - Markdown + JSON 报告
 - Zotero Web API / pyzotero 导入
 - Web of Science 与 CNKI 作为后续适配方向保留设计
@@ -33,6 +35,8 @@ uv run litassist web
 ```
 
 浏览器打开 `http://127.0.0.1:8765`。如果端口被占用，程序会自动换一个可用端口并在终端打印地址。
+
+界面里可以筛选候选文献、只看可获取全文的条目、按相关性/年份/引用排序，并选择部分文献导入 Zotero。默认“导入选中项”是预演；勾选“写入 Zotero”后才会真实写入。
 
 ## 导入 Zotero
 

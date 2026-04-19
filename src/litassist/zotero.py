@@ -85,4 +85,10 @@ def _extra(paper: Paper) -> str:
         lines.append(f"Cited by: {paper.cited_by_count}")
     if paper.score is not None:
         lines.append(f"Search score: {paper.score}")
+    if paper.relevance_score is not None:
+        lines.append(f"Relevance score: {paper.relevance_score}")
+    if paper.oa_status:
+        lines.append(f"OA status: {paper.oa_status}")
+    if paper.relevance_reasons:
+        lines.append("Matched terms: " + ", ".join(paper.relevance_reasons))
     return "\n".join(lines)

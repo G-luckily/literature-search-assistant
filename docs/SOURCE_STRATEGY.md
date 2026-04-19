@@ -83,3 +83,12 @@ These are the MVP's default sources.
 - Semantic Scholar: abstracts, citations, open PDF hints, related graph features.
 
 Semantic Scholar anonymous shared limits can return `429`; configure `SEMANTIC_SCHOLAR_API_KEY` for more stable access.
+
+## Open Access Full Text
+
+Use DOI-based open access enrichment before attempting any platform-specific download.
+
+- Prefer Unpaywall/OpenAlex open access locations.
+- Keep publisher landing pages even when no PDF is found.
+- Discard URLs that are clearly images or non-PDF assets before presenting them as PDF links.
+- Treat full-text download as optional and only for open access or user-authorized institutional access.

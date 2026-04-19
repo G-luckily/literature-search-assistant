@@ -77,10 +77,14 @@ def _paper_lines(index: int, paper: Paper) -> list[str]:
         f"- DOI: {paper.doi or ''}",
         f"- URL: {paper.url or ''}",
         f"- PDF: {paper.pdf_url or ''}",
+        f"- OA Status: {paper.oa_status or ''}",
         f"- Citations: {paper.cited_by_count if paper.cited_by_count is not None else ''}",
         f"- Score: {paper.score if paper.score is not None else ''}",
+        f"- Relevance: {paper.relevance_score if paper.relevance_score is not None else ''}",
         "",
     ]
+    if paper.relevance_reasons:
+        lines.extend(["Matched terms:", "", ", ".join(paper.relevance_reasons), ""])
     if paper.abstract:
         lines.extend(["Abstract:", "", paper.abstract[:1200], ""])
     return lines

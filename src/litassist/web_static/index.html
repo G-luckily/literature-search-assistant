@@ -53,7 +53,7 @@
         </div>
 
         <div class="zotero-row">
-          <button id="dry-run-button" type="button" disabled>导入 Zotero 预演</button>
+          <button id="dry-run-button" type="button" disabled>导入选中项</button>
           <label><input id="apply-import" type="checkbox" /> 写入 Zotero</label>
         </div>
 
@@ -76,8 +76,25 @@
         <div id="error-output" class="error-output" hidden></div>
 
         <div class="section-heading">
-          <h2>候选文献</h2>
+          <div>
+            <h2>候选文献</h2>
+            <p id="selection-count" class="selection-count">已选 0 篇</p>
+          </div>
           <a id="report-link" href="#" target="_blank" hidden>打开报告</a>
+        </div>
+        <div class="result-tools">
+          <input id="filter-text" placeholder="在标题、作者、摘要中筛选" />
+          <label><input id="pdf-only" type="checkbox" /> 只看可获取全文</label>
+          <label>
+            排序
+            <select id="sort-by">
+              <option value="relevance">相关性</option>
+              <option value="year">年份</option>
+              <option value="citations">引用</option>
+            </select>
+          </label>
+          <button id="select-visible" type="button" disabled>选中当前结果</button>
+          <button id="clear-selection" type="button" disabled>清空选择</button>
         </div>
         <div id="papers" class="papers"></div>
       </section>
@@ -85,9 +102,14 @@
 
     <template id="paper-template">
       <article class="paper-card">
+        <label class="paper-select">
+          <input type="checkbox" class="paper-checkbox" />
+          纳入 Zotero
+        </label>
         <div class="paper-meta-line"></div>
         <h3></h3>
         <p class="authors"></p>
+        <div class="score-row"></div>
         <p class="abstract"></p>
         <div class="paper-links"></div>
       </article>

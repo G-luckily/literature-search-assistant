@@ -26,8 +26,9 @@ flowchart LR
     E --> G
     F --> G
     G --> H["Deduplicate"]
-    H --> I["JSON + Markdown report"]
-    H --> J["Zotero importer"]
+    H --> K["Enrich OA links + relevance"]
+    K --> I["JSON + Markdown report"]
+    K --> J["Zotero importer"]
 ```
 
 ## Module Boundaries
@@ -35,6 +36,7 @@ flowchart LR
 - `planner.py`: deterministic first-pass need decomposition and query generation.
 - `search/`: one adapter per academic source.
 - `dedupe.py`: DOI-first and title-fallback duplicate merging.
+- `enrich.py`: relevance scoring, PDF link cleanup, and open-access link enrichment.
 - `report.py`: persistent JSON and Markdown outputs.
 - `zotero.py`: Zotero API integration through pyzotero.
 - `pipeline.py`: orchestration.

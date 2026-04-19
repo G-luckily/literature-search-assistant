@@ -52,11 +52,19 @@ def _merge(left: Paper, right: Paper) -> Paper:
         left.cited_by_count = max(left.cited_by_count or 0, right.cited_by_count)
     if right.score is not None:
         left.score = max(left.score or 0, right.score)
+    if right.relevance_score is not None:
+        left.relevance_score = max(left.relevance_score or 0, right.relevance_score)
+    if right.relevance_reasons:
+        left.relevance_reasons = sorted(
+            set(left.relevance_reasons + right.relevance_reasons)
+        )
+    if not left.oa_status and right.oa_status:
+        left.oa_status = right.oa_status
     return left
 
 
 def _rank_key(paper: Paper) -> tuple[float, int, int, int, int]:
-    score = paper.score or 0
+    score = paper.relevance_score if paper.relevance_score is not None else paper.score or 0
     source_count = len(paper.sources)
     has_pdf = 1 if paper.pdf_url else 0
     cites = paper.cited_by_count or 0

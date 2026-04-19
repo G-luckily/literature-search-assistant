@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from .config import AppConfig
 from .dedupe import dedupe_papers
+from .enrich import enrich_papers
 from .models import Paper, ResearchPlan
 from .planner import build_plan
 from .search import (
@@ -52,7 +53,9 @@ def run_search(
             paper.tags.extend([f"source:{source}", "status:to-screen"])
         papers.extend(source_papers)
 
-    return SearchRun(plan=plan, papers=dedupe_papers(papers), errors=errors)
+    deduped = dedupe_papers(papers)
+    enriched = enrich_papers(deduped, plan, config.general)
+    return SearchRun(plan=plan, papers=dedupe_papers(enriched), errors=errors)
 
 
 def _searchers(config: AppConfig):

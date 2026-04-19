@@ -98,7 +98,8 @@ legend {
 textarea,
 input[type="text"],
 input[type="number"],
-input:not([type]) {
+input:not([type]),
+select {
   width: 100%;
   margin-top: 8px;
   border: 1px solid var(--line);
@@ -279,9 +280,31 @@ button:disabled {
   align-items: center;
 }
 
+.selection-count {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .section-heading a,
 .paper-links a {
   color: var(--teal-deep);
+  font-weight: 700;
+}
+
+.result-tools {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(120px, 160px) auto auto;
+  gap: 10px;
+  align-items: end;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.result-tools label {
+  color: var(--muted);
   font-weight: 700;
 }
 
@@ -291,11 +314,22 @@ button:disabled {
 }
 
 .paper-card {
+  position: relative;
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 16px;
   box-shadow: var(--shadow);
+}
+
+.paper-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .paper-card h3 {
@@ -314,6 +348,14 @@ button:disabled {
 .authors {
   color: var(--muted);
   margin-bottom: 10px;
+}
+
+.score-row {
+  margin-bottom: 10px;
+  color: var(--teal-deep);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .abstract {
@@ -362,5 +404,10 @@ button:disabled {
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .result-tools {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 }

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from .config import AppConfig, load_config
+from .config import AppConfig, load_config, save_llm_config
 from .models import Paper
 from .pipeline import _build_search_plan, run_search
 from .report import write_run
@@ -27,10 +27,12 @@ class LiteratureWebServer(ThreadingHTTPServer):
         server_address: tuple[str, int],
         config: AppConfig,
         project_root: Path,
+        config_path: Path | None = None,
     ) -> None:
         super().__init__(server_address, LiteratureRequestHandler)
         self.config = config
         self.project_root = project_root
+        self.config_path = config_path or project_root / "config.toml"
 
 
 class LiteratureRequestHandler(BaseHTTPRequestHandler):
@@ -40,6 +42,9 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/health":
             self._json({"ok": True})
+            return
+        if parsed.path == "/api/config":
+            self._json(self._config_payload())
             return
         if parsed.path.startswith("/runs/"):
             self._serve_project_file(parsed.path)
@@ -56,6 +61,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 self._handle_search(payload)
             elif parsed.path == "/api/import-zotero":
                 self._handle_import_zotero(payload)
+            elif parsed.path == "/api/config/llm":
+                self._handle_update_llm_config(payload)
             else:
                 self._json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
         except ValueError as exc:
@@ -120,6 +127,67 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         )
         self._json({"result": asdict(result)})
 
+    def _handle_update_llm_config(self, payload: dict[str, Any]) -> None:
+        provider = _optional_text(
+            payload,
+            "provider",
+            default=self.server.config.llm.provider,
+        )
+        provider = provider.lower()
+        if provider not in {"openai", "deepseek"}:
+            raise ValueError("provider must be openai or deepseek")
+
+        api_key = payload.get("apiKey")
+        if api_key is not None and not isinstance(api_key, str):
+            raise ValueError("apiKey must be text")
+        clear_api_key = bool(payload.get("clearApiKey"))
+
+        timeout = payload.get("requestTimeoutSeconds")
+        timeout_seconds = (
+            self.server.config.llm.request_timeout_seconds
+            if timeout is None or timeout == ""
+            else float(timeout)
+        )
+        if timeout_seconds <= 0:
+            raise ValueError("requestTimeoutSeconds must be positive")
+
+        values: dict[str, Any] = {
+            "enabled": bool(payload.get("enabled")),
+            "provider": provider,
+            "model": _optional_text(payload, "model", default=_default_model(provider)),
+            "endpoint": _optional_text(
+                payload,
+                "endpoint",
+                default=_default_endpoint(provider),
+            ),
+            "request_timeout_seconds": timeout_seconds,
+        }
+        if clear_api_key:
+            values["api_key"] = ""
+        elif api_key and api_key.strip():
+            values["api_key"] = api_key.strip()
+
+        self.server.config = save_llm_config(
+            self.server.config_path,
+            values,
+            preserve_empty_api_key=not clear_api_key,
+        )
+        self._json(self._config_payload())
+
+    def _config_payload(self) -> dict[str, Any]:
+        llm = self.server.config.llm
+        return {
+            "configPath": str(self.server.config_path),
+            "llm": {
+                "enabled": llm.enabled,
+                "provider": llm.provider,
+                "model": llm.model,
+                "endpoint": llm.endpoint,
+                "requestTimeoutSeconds": llm.request_timeout_seconds,
+                "hasApiKey": bool(llm.api_key),
+            },
+        }
+
     def _serve_static(self, request_path: str) -> None:
         relative = "index.html" if request_path in {"", "/"} else request_path.lstrip("/")
         relative = unquote(relative)
@@ -182,8 +250,16 @@ def serve(
     project_root: str | Path | None = None,
 ) -> str:
     root = Path(project_root or Path.cwd()).resolve()
-    config = load_config(config_path)
-    server = LiteratureWebServer((host, port), config=config, project_root=root)
+    resolved_config_path = (
+        Path(config_path).resolve() if config_path else root / "config.toml"
+    )
+    config = load_config(resolved_config_path)
+    server = LiteratureWebServer(
+        (host, port),
+        config=config,
+        project_root=root,
+        config_path=resolved_config_path,
+    )
     url = f"http://{host}:{server.server_port}"
     print(f"Literature Search Assistant running at {url}")
     print("Press Ctrl+C to stop.")
@@ -212,9 +288,31 @@ def _required_text(payload: dict[str, Any], key: str) -> str:
     return value.strip()
 
 
+def _optional_text(payload: dict[str, Any], key: str, default: str = "") -> str:
+    value = payload.get(key)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be text")
+    value = value.strip()
+    return value or default
+
+
 def _list_of_text(value: Any) -> list[str]:
     if value is None:
         return []
     if not isinstance(value, list):
         raise ValueError("keyword and source values must be lists")
     return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _default_model(provider: str) -> str:
+    if provider == "deepseek":
+        return "deepseek-chat"
+    return "gpt-4.1-mini"
+
+
+def _default_endpoint(provider: str) -> str:
+    if provider == "deepseek":
+        return "https://api.deepseek.com/v1"
+    return "https://api.openai.com/v1/responses"

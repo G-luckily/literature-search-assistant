@@ -47,6 +47,47 @@
           使用配置的 LLM 拆解研究问题
         </label>
 
+        <details class="config-panel">
+          <summary>LLM 配置</summary>
+          <div class="config-grid">
+            <label>
+              默认启用 LLM
+              <input id="llm-enabled" type="checkbox" />
+            </label>
+            <label>
+              Provider
+              <select id="llm-provider">
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </label>
+            <label>
+              Model
+              <input id="llm-model" type="text" placeholder="deepseek-chat" />
+            </label>
+            <label>
+              Base URL / Endpoint
+              <input id="llm-endpoint" type="text" placeholder="https://api.deepseek.com/v1" />
+            </label>
+            <label>
+              API Key
+              <input id="llm-api-key" type="password" placeholder="留空则保留现有密钥" autocomplete="off" />
+            </label>
+            <label>
+              请求超时（秒）
+              <input id="llm-timeout" type="number" min="5" max="180" value="45" />
+            </label>
+          </div>
+          <label class="clear-key-row">
+            <input id="llm-clear-key" type="checkbox" />
+            清空已保存的 API Key
+          </label>
+          <div class="config-actions">
+            <button id="save-llm-config" type="button">保存 LLM 配置</button>
+            <span id="llm-config-status">正在读取配置。</span>
+          </div>
+        </details>
+
         <label class="limit-label">
           每源数量
           <input id="limit" type="number" min="1" max="50" value="8" />

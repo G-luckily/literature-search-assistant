@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 
-from litassist.config import AppConfig
+from litassist.config import AppConfig, load_config
 from litassist.web import LiteratureWebServer
 
 
@@ -30,3 +30,47 @@ def test_web_health_and_plan(tmp_path: Path):
     assert health.json() == {"ok": True}
     assert plan.status_code == 200
     assert "人工智能" in plan.json()["plan"]["zh_keywords"]
+
+
+def test_web_updates_llm_config_without_returning_api_key(tmp_path: Path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[zotero]\nlibrary_id = "123"\nlibrary_type = "user"\n',
+        encoding="utf-8",
+    )
+    server = LiteratureWebServer(
+        ("127.0.0.1", 0),
+        load_config(config_path),
+        tmp_path,
+        config_path=config_path,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+
+    try:
+        with httpx.Client(timeout=5, trust_env=False) as client:
+            saved = client.post(
+                f"{base_url}/api/config/llm",
+                json={
+                    "enabled": True,
+                    "provider": "deepseek",
+                    "model": "deepseek-chat",
+                    "endpoint": "https://api.deepseek.com/v1",
+                    "apiKey": "test-secret",
+                    "requestTimeoutSeconds": 30,
+                },
+            )
+            loaded = client.get(f"{base_url}/api/config")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert saved.status_code == 200
+    assert saved.json()["llm"]["hasApiKey"] is True
+    assert "apiKey" not in saved.json()["llm"]
+    assert loaded.json()["llm"]["provider"] == "deepseek"
+    text = config_path.read_text(encoding="utf-8")
+    assert '[zotero]' in text
+    assert 'api_key = "test-secret"' in text

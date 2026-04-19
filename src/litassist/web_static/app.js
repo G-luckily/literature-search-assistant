@@ -4,6 +4,7 @@ const state = {
   visiblePapers: [],
   selectedKeys: new Set(),
   reportPath: "",
+  config: null,
 };
 
 const els = {
@@ -17,6 +18,15 @@ const els = {
   dryRunButton: document.querySelector("#dry-run-button"),
   applyImport: document.querySelector("#apply-import"),
   useLlm: document.querySelector("#use-llm"),
+  llmEnabled: document.querySelector("#llm-enabled"),
+  llmProvider: document.querySelector("#llm-provider"),
+  llmModel: document.querySelector("#llm-model"),
+  llmEndpoint: document.querySelector("#llm-endpoint"),
+  llmApiKey: document.querySelector("#llm-api-key"),
+  llmTimeout: document.querySelector("#llm-timeout"),
+  llmClearKey: document.querySelector("#llm-clear-key"),
+  saveLlmConfig: document.querySelector("#save-llm-config"),
+  llmConfigStatus: document.querySelector("#llm-config-status"),
   filterText: document.querySelector("#filter-text"),
   pdfOnly: document.querySelector("#pdf-only"),
   sortBy: document.querySelector("#sort-by"),
@@ -35,11 +45,15 @@ const els = {
 els.planButton.addEventListener("click", () => runPlan());
 els.searchButton.addEventListener("click", () => runSearch());
 els.dryRunButton.addEventListener("click", () => importZotero());
+els.saveLlmConfig.addEventListener("click", () => saveLlmConfig());
+els.llmProvider.addEventListener("change", () => applyProviderDefaults());
 els.filterText.addEventListener("input", () => applyResultControls());
 els.pdfOnly.addEventListener("change", () => applyResultControls());
 els.sortBy.addEventListener("change", () => applyResultControls());
 els.selectVisible.addEventListener("click", () => selectVisiblePapers());
 els.clearSelection.addEventListener("click", () => clearSelection());
+
+loadConfig();
 
 function payloadBase() {
   return {
@@ -134,8 +148,101 @@ async function importZotero() {
   }
 }
 
+async function loadConfig() {
+  try {
+    const response = await fetch("/api/config");
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "读取配置失败。");
+    }
+    state.config = data;
+    renderConfig(data);
+  } catch (error) {
+    setConfigStatus(`配置读取失败：${error.message}`);
+  }
+}
+
+function renderConfig(config) {
+  const llm = config.llm || {};
+  els.llmEnabled.checked = Boolean(llm.enabled);
+  els.useLlm.checked = Boolean(llm.enabled);
+  els.llmProvider.value = llm.provider || "deepseek";
+  els.llmModel.value = llm.model || defaultModel(els.llmProvider.value);
+  els.llmEndpoint.value = llm.endpoint || defaultEndpoint(els.llmProvider.value);
+  els.llmTimeout.value = llm.requestTimeoutSeconds || 45;
+  els.llmApiKey.value = "";
+  els.llmClearKey.checked = false;
+  setConfigStatus(
+    `${providerLabel(els.llmProvider.value)} · ${llm.hasApiKey ? "API Key 已配置" : "API Key 未配置"}`,
+  );
+}
+
+async function saveLlmConfig() {
+  setBusy(true, "正在保存 LLM 配置。");
+  setConfigStatus("正在保存配置。");
+  try {
+    const data = await postJson("/api/config/llm", {
+      enabled: els.llmEnabled.checked,
+      provider: els.llmProvider.value,
+      model: els.llmModel.value.trim(),
+      endpoint: els.llmEndpoint.value.trim(),
+      apiKey: els.llmApiKey.value.trim(),
+      clearApiKey: els.llmClearKey.checked,
+      requestTimeoutSeconds: Number(els.llmTimeout.value || 45),
+    });
+    state.config = data;
+    renderConfig(data);
+    setStatus("LLM 配置已保存。");
+  } catch (error) {
+    setConfigStatus(`保存失败：${error.message}`);
+    showError(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function applyProviderDefaults() {
+  const provider = els.llmProvider.value;
+  if (!els.llmModel.value || isKnownDefaultModel(els.llmModel.value)) {
+    els.llmModel.value = defaultModel(provider);
+  }
+  if (!els.llmEndpoint.value || isKnownDefaultEndpoint(els.llmEndpoint.value)) {
+    els.llmEndpoint.value = defaultEndpoint(provider);
+  }
+}
+
+function isKnownDefaultModel(value) {
+  return ["deepseek-chat", "gpt-4.1-mini"].includes(value);
+}
+
+function isKnownDefaultEndpoint(value) {
+  return [
+    "https://api.deepseek.com/v1",
+    "https://api.openai.com/v1/responses",
+  ].includes(value);
+}
+
+function defaultModel(provider) {
+  if (provider === "openai") return "gpt-4.1-mini";
+  return "deepseek-chat";
+}
+
+function defaultEndpoint(provider) {
+  if (provider === "openai") return "https://api.openai.com/v1/responses";
+  return "https://api.deepseek.com/v1";
+}
+
+function providerLabel(provider) {
+  if (provider === "openai") return "OpenAI";
+  return "DeepSeek";
+}
+
+function setConfigStatus(message) {
+  els.llmConfigStatus.textContent = message;
+}
+
 async function postJson(url, payload) {
-  if (!payload.need && url !== "/api/import-zotero") {
+  if (!payload.need && ["/api/plan", "/api/search"].includes(url)) {
     throw new Error("请先填写研究需求。");
   }
   const response = await fetch(url, {
@@ -394,6 +501,7 @@ function setBusy(isBusy, message = "") {
   els.planButton.disabled = isBusy;
   els.searchButton.disabled = isBusy;
   els.dryRunButton.disabled = isBusy || state.selectedKeys.size === 0;
+  els.saveLlmConfig.disabled = isBusy;
   if (message) setStatus(message);
 }
 

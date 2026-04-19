@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -111,3 +113,63 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         llm=llm,
         zotero=zotero,
     )
+
+
+def save_llm_config(
+    path: str | Path,
+    values: dict[str, Any],
+    preserve_empty_api_key: bool = True,
+) -> AppConfig:
+    config_path = Path(path)
+    data: dict[str, Any] = {}
+    if config_path.exists():
+        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+
+    llm = dict(data.get("llm", {}))
+    for key in ("enabled", "provider", "model", "endpoint", "request_timeout_seconds"):
+        if key in values and values[key] is not None:
+            llm[key] = values[key]
+
+    if "api_key" in values:
+        api_key = values["api_key"]
+        if api_key or not preserve_empty_api_key:
+            llm["api_key"] = api_key
+
+    data["llm"] = llm
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(_dump_toml(data), encoding="utf-8")
+    return load_config(config_path)
+
+
+def _dump_toml(data: dict[str, Any]) -> str:
+    lines: list[str] = []
+    root_items = {
+        key: value for key, value in data.items() if not isinstance(value, dict)
+    }
+    if root_items:
+        _append_toml_values(lines, root_items)
+
+    for section, values in data.items():
+        if not isinstance(values, dict):
+            continue
+        if lines:
+            lines.append("")
+        lines.append(f"[{section}]")
+        _append_toml_values(lines, values)
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _append_toml_values(lines: list[str], values: dict[str, Any]) -> None:
+    for key, value in values.items():
+        lines.append(f"{key} = {_toml_value(value)}")
+
+
+def _toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return str(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    return json.dumps(str(value), ensure_ascii=False)

@@ -7,12 +7,13 @@
 - 需求拆解和中英文关键词生成
 - 可选 LLM 结构化拆解研究问题、核心概念、纳入/排除标准
 - OpenAlex、Crossref、Semantic Scholar 检索
+- 可选 Google Scholar via SerpApi 与 Web of Science API 检索
 - DOI / 标题去重
 - 开放全文链接增强和伪 PDF 链接清理
-- 相关性评分、结果筛选和选中文献导入
+- 默认近五年新文献优先、相关性评分、结果筛选和选中文献导入
 - Markdown + JSON 报告
 - Zotero Web API / pyzotero 导入
-- Web of Science 与 CNKI 作为后续适配方向保留设计
+- CNKI 作为后续适配方向保留设计
 
 ## 快速开始
 
@@ -37,7 +38,7 @@ uv run litassist web
 
 浏览器打开 `http://127.0.0.1:8765`。如果端口被占用，程序会自动换一个可用端口并在终端打印地址。
 
-界面里可以选择是否使用 LLM 拆解研究问题，筛选候选文献、只看可获取全文的条目、按相关性/年份/引用排序，并选择部分文献导入 Zotero。默认“导入选中项”是预演；勾选“写入 Zotero”后才会真实写入。
+界面里可以选择是否使用 LLM 拆解研究问题，设置起始年份和新文献优先策略，配置 Semantic Scholar、Google Scholar via SerpApi、Web of Science 的 API key，筛选候选文献、只看可获取全文的条目、按新近/相关性/年份/引用排序，并选择部分文献导入 Zotero。默认“导入选中项”是预演；勾选“写入 Zotero”后才会真实写入。
 
 ## LLM 研究需求拆解
 
@@ -102,13 +103,15 @@ uv run litassist import-zotero runs/demo/papers.json --config config.toml --limi
 
 ## 检索源策略
 
-MVP 默认使用 API 友好的来源：
+默认使用 API 友好的来源，并从近五年起按新文献优先检索：
 
 - OpenAlex：开放学术图谱，适合宽检索、开放获取状态、引用量、DOI 补全
 - Crossref：DOI 和出版元数据补全
-- Semantic Scholar：摘要、引用、开放 PDF 线索
+- Semantic Scholar：摘要、引用、开放 PDF 线索；匿名请求容易限流，建议配置 API key
+- Google Scholar：没有官方开放批量 API，本项目只支持通过 SerpApi 的 Google Scholar 引擎接入
+- Web of Science：需要 Clarivate Web of Science API key
 
-不把 Google Scholar 或 CNKI 的批量爬取作为第一阶段核心。Google Scholar 没有官方开放检索 API，自动化访问容易触发封禁；CNKI 与机构订阅协议强相关，后续更适合做“题录导出解析 + Zotero translator 复用 + 本地合法附件匹配”。
+不做 Google Scholar 或 CNKI 的直接批量爬取。Google Scholar 没有官方开放检索 API，自动化访问容易触发封禁；CNKI 与机构订阅协议强相关，后续更适合做“题录导出解析 + Zotero translator 复用 + 本地合法附件匹配”。
 
 更详细的平台接入边界见 `docs/SOURCE_STRATEGY.md`。
 
@@ -116,7 +119,7 @@ MVP 默认使用 API 友好的来源：
 
 建议按这个顺序推进：
 
-1. 接入 Web of Science Starter/Expanded API。
+1. 完善 Web of Science Starter/Expanded API 的字段映射和错误诊断。
 2. 增加 CNKI 题录导出解析与 `translators_CN` 复用。
 3. 增加 Zotero Translation Server sidecar，用 URL 自动补元数据。
 4. 增加任务历史、筛选记录和导入状态追踪。

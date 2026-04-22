@@ -3,10 +3,16 @@ contact_email = "your.name@example.com"
 user_agent = "literature-search-assistant/0.1 (mailto:your.name@example.com)"
 request_timeout_seconds = 20
 max_results_per_source = 20
+from_year = 2022
+prefer_recent = true
 enabled_sources = ["openalex", "crossref", "semantic_scholar"]
 
 [semantic_scholar]
 api_key = ""
+
+[google_scholar]
+api_key = ""
+endpoint = "https://serpapi.com/search.json"
 
 [web_of_science]
 api_key = ""

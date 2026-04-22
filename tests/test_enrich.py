@@ -1,3 +1,4 @@
+from litassist.config import GeneralConfig
 from litassist.enrich import clean_pdf_links, score_relevance
 from litassist.models import Paper
 from litassist.planner import build_plan
@@ -48,3 +49,20 @@ def test_score_relevance_does_not_reward_unmatched_citation_count():
 
     assert paper.relevance_score == 0
     assert paper.relevance_reasons == []
+
+
+def test_score_relevance_rewards_recent_matched_papers():
+    plan = build_plan(
+        "人工智能辅助文献检索",
+        en_keywords=["artificial intelligence", "literature retrieval"],
+    )
+    paper = Paper(
+        title="Artificial intelligence for literature retrieval",
+        source="openalex",
+        year=2025,
+    )
+
+    score_relevance([paper], plan, GeneralConfig(from_year=2022))
+
+    assert paper.relevance_score is not None
+    assert paper.relevance_score > 6

@@ -32,9 +32,26 @@ def main(argv: list[str] | None = None) -> None:
     search_parser.add_argument("--limit", type=int, default=None)
     search_parser.add_argument("--llm", action="store_true", help="Use LLM planning.")
     search_parser.add_argument(
+        "--from-year",
+        type=int,
+        default=None,
+        help="Only keep papers from this publication year onward.",
+    )
+    search_parser.add_argument(
+        "--no-prefer-recent",
+        action="store_true",
+        help="Use source relevance ranking instead of newest-first source queries.",
+    )
+    search_parser.add_argument(
         "--source",
         action="append",
-        choices=["openalex", "crossref", "semantic_scholar", "web_of_science"],
+        choices=[
+            "openalex",
+            "crossref",
+            "google_scholar",
+            "semantic_scholar",
+            "web_of_science",
+        ],
         help="Source to query. Can be repeated.",
     )
     _add_keyword_args(search_parser)
@@ -83,6 +100,8 @@ def main(argv: list[str] | None = None) -> None:
             zh_keywords=args.zh_keyword,
             en_keywords=args.en_keyword,
             use_llm=args.llm,
+            from_year=args.from_year,
+            prefer_recent=False if args.no_prefer_recent else None,
         )
         write_run(run, args.out)
         print(f"Wrote {len(run.papers)} deduped papers to {Path(args.out).resolve()}")

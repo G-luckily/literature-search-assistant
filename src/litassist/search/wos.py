@@ -18,13 +18,18 @@ class WebOfScienceSearcher(Searcher):
 
     def search(self, query: str, limit: int) -> list[Paper]:
         if not self.config.api_key:
-            return []
+            raise SearchError(
+                "Web of Science requires an API key. Add it in Source 配置 or set WOS_API_KEY."
+            )
 
         headers = {
             "User-Agent": self.general.user_agent,
             "X-ApiKey": self.config.api_key,
         }
-        params = {"q": query, "limit": min(limit, 50), "page": 1}
+        wos_query = query
+        if self.general.from_year:
+            wos_query = f"({query}) AND PY=({self.general.from_year}-{_current_year()})"
+        params = {"q": wos_query, "limit": min(limit, 50), "page": 1}
 
         try:
             with httpx.Client(
@@ -76,3 +81,9 @@ def _int_or_none(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _current_year() -> int:
+    from datetime import date
+
+    return date.today().year

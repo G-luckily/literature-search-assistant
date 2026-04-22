@@ -38,14 +38,70 @@
           <legend>检索来源</legend>
           <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
           <label><input type="checkbox" name="source" value="crossref" checked /> Crossref</label>
-          <label><input type="checkbox" name="source" value="semantic_scholar" /> Semantic Scholar</label>
+          <label><input type="checkbox" name="source" value="semantic_scholar" checked /> Semantic Scholar</label>
+          <label><input type="checkbox" name="source" value="google_scholar" /> Google Scholar</label>
           <label><input type="checkbox" name="source" value="web_of_science" /> Web of Science</label>
         </fieldset>
+
+        <div id="source-status" class="source-status"></div>
+
+        <div class="field-grid">
+          <label>
+            起始年份
+            <input id="from-year" type="number" min="1900" max="2100" />
+          </label>
+          <label class="llm-toggle">
+            <input id="prefer-recent" type="checkbox" checked />
+            优先检索最新文献
+          </label>
+        </div>
 
         <label class="llm-toggle">
           <input id="use-llm" type="checkbox" />
           使用配置的 LLM 拆解研究问题
         </label>
+
+        <details class="config-panel">
+          <summary>数据源配置</summary>
+          <div class="config-grid">
+            <label>
+              Semantic Scholar API Key
+              <input id="semantic-scholar-api-key" type="password" placeholder="留空则保留现有密钥" autocomplete="off" />
+            </label>
+            <label class="clear-key-row">
+              <input id="clear-semantic-scholar-api-key" type="checkbox" />
+              清空 Semantic Scholar Key
+            </label>
+            <label>
+              Google Scholar SerpApi Key
+              <input id="google-scholar-api-key" type="password" placeholder="SerpApi key，留空则保留" autocomplete="off" />
+            </label>
+            <label>
+              Google Scholar SerpApi Endpoint
+              <input id="google-scholar-endpoint" type="text" placeholder="https://serpapi.com/search.json" />
+            </label>
+            <label class="clear-key-row">
+              <input id="clear-google-scholar-api-key" type="checkbox" />
+              清空 Google Scholar SerpApi Key
+            </label>
+            <label>
+              Web of Science API Key
+              <input id="web-of-science-api-key" type="password" placeholder="留空则保留现有密钥" autocomplete="off" />
+            </label>
+            <label>
+              Web of Science Endpoint
+              <input id="web-of-science-endpoint" type="text" placeholder="https://api.clarivate.com/apis/wos-starter/v1/documents" />
+            </label>
+            <label class="clear-key-row">
+              <input id="clear-web-of-science-api-key" type="checkbox" />
+              清空 Web of Science Key
+            </label>
+          </div>
+          <div class="config-actions">
+            <button id="save-source-config" type="button">保存数据源配置</button>
+            <span id="source-config-status">正在读取配置。</span>
+          </div>
+        </details>
 
         <details class="config-panel">
           <summary>LLM 配置</summary>
@@ -136,6 +192,7 @@
           <label>
             排序
             <select id="sort-by">
+              <option value="recent">新近优先</option>
               <option value="relevance">相关性</option>
               <option value="year">年份</option>
               <option value="citations">引用</option>

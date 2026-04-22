@@ -12,6 +12,8 @@ const els = {
   zhKeywords: document.querySelector("#zh-keywords"),
   enKeywords: document.querySelector("#en-keywords"),
   limit: document.querySelector("#limit"),
+  fromYear: document.querySelector("#from-year"),
+  preferRecent: document.querySelector("#prefer-recent"),
   status: document.querySelector("#status"),
   planButton: document.querySelector("#plan-button"),
   searchButton: document.querySelector("#search-button"),
@@ -27,6 +29,17 @@ const els = {
   llmClearKey: document.querySelector("#llm-clear-key"),
   saveLlmConfig: document.querySelector("#save-llm-config"),
   llmConfigStatus: document.querySelector("#llm-config-status"),
+  sourceStatus: document.querySelector("#source-status"),
+  semanticScholarApiKey: document.querySelector("#semantic-scholar-api-key"),
+  clearSemanticScholarApiKey: document.querySelector("#clear-semantic-scholar-api-key"),
+  googleScholarApiKey: document.querySelector("#google-scholar-api-key"),
+  googleScholarEndpoint: document.querySelector("#google-scholar-endpoint"),
+  clearGoogleScholarApiKey: document.querySelector("#clear-google-scholar-api-key"),
+  webOfScienceApiKey: document.querySelector("#web-of-science-api-key"),
+  webOfScienceEndpoint: document.querySelector("#web-of-science-endpoint"),
+  clearWebOfScienceApiKey: document.querySelector("#clear-web-of-science-api-key"),
+  saveSourceConfig: document.querySelector("#save-source-config"),
+  sourceConfigStatus: document.querySelector("#source-config-status"),
   filterText: document.querySelector("#filter-text"),
   pdfOnly: document.querySelector("#pdf-only"),
   sortBy: document.querySelector("#sort-by"),
@@ -46,6 +59,7 @@ els.planButton.addEventListener("click", () => runPlan());
 els.searchButton.addEventListener("click", () => runSearch());
 els.dryRunButton.addEventListener("click", () => importZotero());
 els.saveLlmConfig.addEventListener("click", () => saveLlmConfig());
+els.saveSourceConfig.addEventListener("click", () => saveSourceConfig());
 els.llmProvider.addEventListener("change", () => applyProviderDefaults());
 els.filterText.addEventListener("input", () => applyResultControls());
 els.pdfOnly.addEventListener("change", () => applyResultControls());
@@ -96,6 +110,8 @@ async function runSearch() {
     ...payloadBase(),
     sources: selectedSources(),
     limit: Number(els.limit.value || 8),
+    fromYear: els.fromYear.value ? Number(els.fromYear.value) : null,
+    preferRecent: els.preferRecent.checked,
   };
   setBusy(true, "正在检索，开放 API 可能需要几十秒。");
   clearErrors();
@@ -107,8 +123,11 @@ async function runSearch() {
     state.reportPath = data.reportPath || "";
     renderPlan(data.plan);
     renderErrors(data.errors || {});
+    renderSourceSummary(data.errors || {});
     applyResultControls();
-    setStatus(`检索完成：${state.papers.length} 篇候选文献。`);
+    setStatus(
+      `检索完成：${state.papers.length} 篇候选文献${payload.fromYear ? `，${payload.fromYear} 年以来` : ""}。`,
+    );
     updateSelectionUi();
     updateReportLink(data.reportUrl);
   } catch (error) {
@@ -163,6 +182,9 @@ async function loadConfig() {
 }
 
 function renderConfig(config) {
+  const general = config.general || {};
+  els.fromYear.value = general.fromYear || "";
+  els.preferRecent.checked = general.preferRecent !== false;
   const llm = config.llm || {};
   els.llmEnabled.checked = Boolean(llm.enabled);
   els.useLlm.checked = Boolean(llm.enabled);
@@ -172,9 +194,27 @@ function renderConfig(config) {
   els.llmTimeout.value = llm.requestTimeoutSeconds || 45;
   els.llmApiKey.value = "";
   els.llmClearKey.checked = false;
+  renderSourceConfig(config);
   setConfigStatus(
     `${providerLabel(els.llmProvider.value)} · ${llm.hasApiKey ? "API Key 已配置" : "API Key 未配置"}`,
   );
+}
+
+function renderSourceConfig(config) {
+  const sources = config.sources || {};
+  els.semanticScholarApiKey.value = "";
+  els.clearSemanticScholarApiKey.checked = false;
+  els.googleScholarApiKey.value = "";
+  els.googleScholarEndpoint.value =
+    sources.google_scholar?.endpoint || "https://serpapi.com/search.json";
+  els.clearGoogleScholarApiKey.checked = false;
+  els.webOfScienceApiKey.value = "";
+  els.webOfScienceEndpoint.value =
+    sources.web_of_science?.endpoint ||
+    "https://api.clarivate.com/apis/wos-starter/v1/documents";
+  els.clearWebOfScienceApiKey.checked = false;
+  renderSourceBadges();
+  setSourceConfigStatus(sourceConfigText());
 }
 
 async function saveLlmConfig() {
@@ -195,6 +235,33 @@ async function saveLlmConfig() {
     setStatus("LLM 配置已保存。");
   } catch (error) {
     setConfigStatus(`保存失败：${error.message}`);
+    showError(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function saveSourceConfig() {
+  setBusy(true, "正在保存数据源配置。");
+  setSourceConfigStatus("正在保存配置。");
+  try {
+    const data = await postJson("/api/config/sources", {
+      fromYear: els.fromYear.value ? Number(els.fromYear.value) : null,
+      preferRecent: els.preferRecent.checked,
+      semanticScholarApiKey: els.semanticScholarApiKey.value.trim(),
+      clearSemanticScholarApiKey: els.clearSemanticScholarApiKey.checked,
+      googleScholarApiKey: els.googleScholarApiKey.value.trim(),
+      googleScholarEndpoint: els.googleScholarEndpoint.value.trim(),
+      clearGoogleScholarApiKey: els.clearGoogleScholarApiKey.checked,
+      webOfScienceApiKey: els.webOfScienceApiKey.value.trim(),
+      webOfScienceEndpoint: els.webOfScienceEndpoint.value.trim(),
+      clearWebOfScienceApiKey: els.clearWebOfScienceApiKey.checked,
+    });
+    state.config = data;
+    renderConfig(data);
+    setStatus("数据源配置已保存。");
+  } catch (error) {
+    setSourceConfigStatus(`保存失败：${error.message}`);
     showError(error.message);
   } finally {
     setBusy(false);
@@ -239,6 +306,26 @@ function providerLabel(provider) {
 
 function setConfigStatus(message) {
   els.llmConfigStatus.textContent = message;
+}
+
+function setSourceConfigStatus(message) {
+  els.sourceConfigStatus.textContent = message;
+}
+
+function sourceConfigText() {
+  const sources = state.config?.sources || {};
+  const names = [
+    sourceReadyText("semantic_scholar", "Semantic Scholar", sources),
+    sourceReadyText("google_scholar", "Google Scholar", sources),
+    sourceReadyText("web_of_science", "Web of Science", sources),
+  ];
+  return names.join(" · ");
+}
+
+function sourceReadyText(key, label, sources) {
+  const status = sources[key];
+  if (!status?.requiresKey) return `${label} 可用`;
+  return `${label} ${status.configured ? "已配置" : "未配置"}`;
 }
 
 async function postJson(url, payload) {
@@ -368,6 +455,48 @@ function renderErrors(errors) {
     .join("");
 }
 
+function renderSourceSummary(errors = {}) {
+  renderSourceBadges(errors);
+}
+
+function renderSourceBadges(errors = {}) {
+  const sources = state.config?.sources || {};
+  const selected = new Set(selectedSources());
+  const counts = countSources();
+  const keys = [
+    "openalex",
+    "crossref",
+    "semantic_scholar",
+    "google_scholar",
+    "web_of_science",
+  ];
+  els.sourceStatus.innerHTML = "";
+  for (const key of keys) {
+    const meta = sources[key] || {};
+    const badge = document.createElement("span");
+    const configured = meta.configured !== false;
+    const hasError = Boolean(errors[key]);
+    badge.className = `source-badge ${selected.has(key) ? "selected" : ""} ${configured ? "ready" : "needs-key"} ${hasError ? "source-error" : ""}`;
+    const label = meta.label || key;
+    const count = counts[key] || 0;
+    let suffix = count ? `${count} 篇` : selected.has(key) ? "待检索" : "未选";
+    if (hasError) suffix = "出错";
+    if (meta.requiresKey && !meta.configured) suffix = "需 Key";
+    badge.textContent = `${label}: ${suffix}`;
+    els.sourceStatus.append(badge);
+  }
+}
+
+function countSources() {
+  const counts = {};
+  for (const paper of state.papers) {
+    for (const source of paper.sources || [paper.source]) {
+      counts[source] = (counts[source] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
 function clearErrors() {
   els.errorOutput.hidden = true;
   els.errorOutput.innerHTML = "";
@@ -437,6 +566,13 @@ function applyResultControls() {
 }
 
 function sortPapers(left, right, sortBy) {
+  if (sortBy === "recent") {
+    return (
+      (right.year || 0) - (left.year || 0) ||
+      (right.relevance_score ?? right.score ?? 0) -
+        (left.relevance_score ?? left.score ?? 0)
+    );
+  }
   if (sortBy === "year") {
     return (right.year || 0) - (left.year || 0);
   }
@@ -502,6 +638,7 @@ function setBusy(isBusy, message = "") {
   els.searchButton.disabled = isBusy;
   els.dryRunButton.disabled = isBusy || state.selectedKeys.size === 0;
   els.saveLlmConfig.disabled = isBusy;
+  els.saveSourceConfig.disabled = isBusy;
   if (message) setStatus(message);
 }
 

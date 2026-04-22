@@ -19,15 +19,20 @@ def enrich_papers(
     config: GeneralConfig,
     use_unpaywall: bool = True,
 ) -> list[Paper]:
-    score_relevance(papers, plan)
+    score_relevance(papers, plan, config)
     clean_pdf_links(papers)
     if use_unpaywall:
         enrich_open_access_links(papers, config)
     return papers
 
 
-def score_relevance(papers: list[Paper], plan: ResearchPlan) -> None:
+def score_relevance(
+    papers: list[Paper],
+    plan: ResearchPlan,
+    config: GeneralConfig | None = None,
+) -> None:
     terms = _query_terms(plan)
+    from_year = config.from_year if config else None
     for paper in papers:
         haystack = " ".join(
             value
@@ -59,6 +64,8 @@ def score_relevance(papers: list[Paper], plan: ResearchPlan) -> None:
             score += 0.25 if match_score else 0
         if paper.cited_by_count and match_score:
             score += min(paper.cited_by_count / 500, 1.5)
+        if paper.year and from_year and paper.year >= from_year and match_score:
+            score += min((paper.year - from_year + 1) / 10, 0.75)
         paper.relevance_score = round(score, 3)
         paper.relevance_reasons = matched[:8]
 

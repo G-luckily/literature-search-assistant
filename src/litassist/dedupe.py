@@ -63,10 +63,10 @@ def _merge(left: Paper, right: Paper) -> Paper:
     return left
 
 
-def _rank_key(paper: Paper) -> tuple[float, int, int, int, int]:
+def _rank_key(paper: Paper) -> tuple[int, float, int, int, int]:
     score = paper.relevance_score if paper.relevance_score is not None else paper.score or 0
+    year = paper.year or 0
     source_count = len(paper.sources)
     has_pdf = 1 if paper.pdf_url else 0
     cites = paper.cited_by_count or 0
-    year = paper.year or 0
-    return score, source_count, has_pdf, cites, year
+    return year, score, source_count, has_pdf, cites

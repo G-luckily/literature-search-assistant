@@ -141,9 +141,43 @@ fieldset {
 
 fieldset label,
 .zotero-row label,
-.llm-toggle {
+.llm-toggle,
+.clear-key-row {
   font-weight: 600;
   color: var(--muted);
+}
+
+.source-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.source-badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #eef3ef;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.source-badge.selected.ready {
+  border-color: var(--teal);
+  color: var(--teal-deep);
+}
+
+.source-badge.needs-key {
+  border-color: #e4b8b4;
+  background: #fff4f3;
+  color: var(--danger);
+}
+
+.source-badge.source-error {
+  border-color: var(--danger);
+  background: #fff4f3;
+  color: var(--danger);
 }
 
 .limit-label input {

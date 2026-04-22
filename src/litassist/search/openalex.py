@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Any
 
 import httpx
@@ -22,6 +23,13 @@ class OpenAlexSearcher(Searcher):
             "per-page": min(limit, 200),
             "sort": "relevance_score:desc",
         }
+        if self.config.from_year:
+            params["filter"] = ",".join(
+                [
+                    f"from_publication_date:{self.config.from_year}-01-01",
+                    f"to_publication_date:{date.today().year}-12-31",
+                ]
+            )
         if self.config.contact_email:
             params["mailto"] = self.config.contact_email
 

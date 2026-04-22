@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from .config import AppConfig, load_config, save_llm_config
+from .config import AppConfig, load_config, save_llm_config, save_source_config
 from .models import Paper
 from .pipeline import _build_search_plan, run_search
 from .report import write_run
@@ -63,6 +63,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 self._handle_import_zotero(payload)
             elif parsed.path == "/api/config/llm":
                 self._handle_update_llm_config(payload)
+            elif parsed.path == "/api/config/sources":
+                self._handle_update_source_config(payload)
             else:
                 self._json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
         except ValueError as exc:
@@ -87,8 +89,11 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
     def _handle_search(self, payload: dict[str, Any]) -> None:
         need = _required_text(payload, "need")
         sources = _list_of_text(payload.get("sources"))
-        limit = int(payload.get("limit") or self.server.config.general.max_results_per_source)
+        limit = int(
+            payload.get("limit") or self.server.config.general.max_results_per_source
+        )
         limit = max(1, min(limit, 50))
+        from_year = _optional_int(payload, "fromYear")
         run = run_search(
             need,
             config=self.server.config,
@@ -97,6 +102,10 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             zh_keywords=_list_of_text(payload.get("zhKeywords")),
             en_keywords=_list_of_text(payload.get("enKeywords")),
             use_llm=bool(payload.get("useLlm")),
+            from_year=from_year,
+            prefer_recent=(
+                bool(payload["preferRecent"]) if "preferRecent" in payload else None
+            ),
         )
         run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
         out_dir = self.server.project_root / "runs" / "web" / run_id
@@ -174,10 +183,37 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         )
         self._json(self._config_payload())
 
+    def _handle_update_source_config(self, payload: dict[str, Any]) -> None:
+        from_year = _optional_int(payload, "fromYear")
+        if from_year is not None and not 1900 <= from_year <= 2100:
+            raise ValueError("fromYear must be between 1900 and 2100")
+
+        values: dict[str, Any] = {
+            "from_year": from_year,
+            "prefer_recent": bool(payload.get("preferRecent")),
+            "semantic_scholar": _api_key_update(payload, "semanticScholar"),
+            "web_of_science": _api_key_update(payload, "webOfScience"),
+            "google_scholar": _api_key_update(payload, "googleScholar"),
+        }
+        web_endpoint = _optional_text(payload, "webOfScienceEndpoint")
+        google_endpoint = _optional_text(payload, "googleScholarEndpoint")
+        if web_endpoint:
+            values["web_of_science"]["endpoint"] = web_endpoint
+        if google_endpoint:
+            values["google_scholar"]["endpoint"] = google_endpoint
+
+        self.server.config = save_source_config(self.server.config_path, values)
+        self._json(self._config_payload())
+
     def _config_payload(self) -> dict[str, Any]:
+        general = self.server.config.general
         llm = self.server.config.llm
         return {
             "configPath": str(self.server.config_path),
+            "general": {
+                "fromYear": general.from_year,
+                "preferRecent": general.prefer_recent,
+            },
             "llm": {
                 "enabled": llm.enabled,
                 "provider": llm.provider,
@@ -185,6 +221,35 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 "endpoint": llm.endpoint,
                 "requestTimeoutSeconds": llm.request_timeout_seconds,
                 "hasApiKey": bool(llm.api_key),
+            },
+            "sources": {
+                "openalex": {
+                    "label": "OpenAlex",
+                    "configured": True,
+                    "requiresKey": False,
+                },
+                "crossref": {
+                    "label": "Crossref",
+                    "configured": True,
+                    "requiresKey": False,
+                },
+                "semantic_scholar": {
+                    "label": "Semantic Scholar",
+                    "configured": bool(self.server.config.semantic_scholar.api_key),
+                    "requiresKey": True,
+                },
+                "google_scholar": {
+                    "label": "Google Scholar via SerpApi",
+                    "configured": bool(self.server.config.google_scholar.api_key),
+                    "requiresKey": True,
+                    "endpoint": self.server.config.google_scholar.endpoint,
+                },
+                "web_of_science": {
+                    "label": "Web of Science",
+                    "configured": bool(self.server.config.web_of_science.api_key),
+                    "requiresKey": True,
+                    "endpoint": self.server.config.web_of_science.endpoint,
+                },
             },
         }
 
@@ -296,6 +361,29 @@ def _optional_text(payload: dict[str, Any], key: str, default: str = "") -> str:
         raise ValueError(f"{key} must be text")
     value = value.strip()
     return value or default
+
+
+def _optional_int(payload: dict[str, Any], key: str) -> int | None:
+    value = payload.get(key)
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must be an integer") from exc
+
+
+def _api_key_update(payload: dict[str, Any], prefix: str) -> dict[str, str | None]:
+    api_key_field = f"{prefix}ApiKey"
+    clear_field = f"clear{prefix[0].upper()}{prefix[1:]}ApiKey"
+    api_key = payload.get(api_key_field)
+    if api_key is not None and not isinstance(api_key, str):
+        raise ValueError(f"{api_key_field} must be text")
+    if bool(payload.get(clear_field)):
+        return {"api_key": ""}
+    if api_key and api_key.strip():
+        return {"api_key": api_key.strip()}
+    return {}
 
 
 def _list_of_text(value: Any) -> list[str]:

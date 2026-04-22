@@ -93,6 +93,7 @@ def build_plan(
     crossref_query = " ".join(main_terms[:8])
     openalex_query = " ".join(main_terms[:8])
     semantic_query = " ".join(main_terms[:8])
+    google_scholar_query = " ".join(main_terms[:8])
 
     wos_terms = en[:8] + zh[:4]
     wos_query = "TS=(" + " OR ".join(f'"{term}"' for term in wos_terms[:10]) + ")"
@@ -120,6 +121,7 @@ def build_plan(
             "openalex": openalex_query,
             "crossref": crossref_query,
             "semantic_scholar": semantic_query,
+            "google_scholar": google_scholar_query,
             "web_of_science": wos_query,
             "cnki": cnki_query,
         },

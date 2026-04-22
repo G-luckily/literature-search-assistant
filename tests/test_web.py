@@ -74,3 +74,47 @@ def test_web_updates_llm_config_without_returning_api_key(tmp_path: Path):
     text = config_path.read_text(encoding="utf-8")
     assert '[zotero]' in text
     assert 'api_key = "test-secret"' in text
+
+
+def test_web_updates_source_config_without_returning_api_keys(tmp_path: Path):
+    config_path = tmp_path / "config.toml"
+    server = LiteratureWebServer(
+        ("127.0.0.1", 0),
+        load_config(config_path),
+        tmp_path,
+        config_path=config_path,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+
+    try:
+        with httpx.Client(timeout=5, trust_env=False) as client:
+            saved = client.post(
+                f"{base_url}/api/config/sources",
+                json={
+                    "fromYear": 2022,
+                    "preferRecent": True,
+                    "semanticScholarApiKey": "semantic-secret",
+                    "googleScholarApiKey": "serp-secret",
+                    "googleScholarEndpoint": "https://serpapi.com/search.json",
+                    "webOfScienceApiKey": "wos-secret",
+                    "webOfScienceEndpoint": "https://api.clarivate.com/apis/wos-starter/v1/documents",
+                },
+            )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    payload = saved.json()
+    assert saved.status_code == 200
+    assert payload["general"]["fromYear"] == 2022
+    assert payload["sources"]["semantic_scholar"]["configured"] is True
+    assert payload["sources"]["google_scholar"]["configured"] is True
+    assert payload["sources"]["web_of_science"]["configured"] is True
+    assert "apiKey" not in str(payload)
+    text = config_path.read_text(encoding="utf-8")
+    assert 'api_key = "semantic-secret"' in text
+    assert 'api_key = "serp-secret"' in text
+    assert 'api_key = "wos-secret"' in text

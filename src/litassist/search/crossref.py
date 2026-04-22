@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from html import unescape
 from typing import Any
 
@@ -21,6 +22,8 @@ class CrossrefSearcher(Searcher):
         params: dict[str, Any] = {
             "query.bibliographic": query,
             "rows": min(limit, 100),
+            "sort": "relevance",
+            "order": "desc",
             "select": ",".join(
                 [
                     "DOI",
@@ -36,6 +39,13 @@ class CrossrefSearcher(Searcher):
                 ]
             ),
         }
+        if self.config.from_year:
+            params["filter"] = ",".join(
+                [
+                    f"from-pub-date:{self.config.from_year}-01-01",
+                    f"until-pub-date:{date.today().year}-12-31",
+                ]
+            )
         if self.config.contact_email:
             params["mailto"] = self.config.contact_email
 

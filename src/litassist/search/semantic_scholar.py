@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 import httpx
@@ -34,6 +35,8 @@ class SemanticScholarSearcher(Searcher):
                 ]
             ),
         }
+        if self.general.from_year:
+            params["year"] = f"{self.general.from_year}-{date.today().year}"
         headers = {"User-Agent": self.general.user_agent}
         if self.config.api_key:
             headers["x-api-key"] = self.config.api_key

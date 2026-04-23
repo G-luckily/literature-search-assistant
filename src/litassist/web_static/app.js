@@ -5,6 +5,7 @@ const state = {
   selectedKeys: new Set(),
   reportPath: "",
   config: null,
+  sourceMeta: {},
 };
 
 const els = {
@@ -31,6 +32,18 @@ const els = {
   llmConfigStatus: document.querySelector("#llm-config-status"),
   sourceStatus: document.querySelector("#source-status"),
   semanticScholarApiKey: document.querySelector("#semantic-scholar-api-key"),
+  semanticScholarMonthlySearchBudget: document.querySelector(
+    "#semantic-scholar-monthly-search-budget",
+  ),
+  semanticScholarWarningRemaining: document.querySelector(
+    "#semantic-scholar-warning-remaining",
+  ),
+  semanticScholarCacheOnlyRemaining: document.querySelector(
+    "#semantic-scholar-cache-only-remaining",
+  ),
+  semanticScholarCacheTtlDays: document.querySelector(
+    "#semantic-scholar-cache-ttl-days",
+  ),
   clearSemanticScholarApiKey: document.querySelector("#clear-semantic-scholar-api-key"),
   googleScholarApiKey: document.querySelector("#google-scholar-api-key"),
   googleScholarEndpoint: document.querySelector("#google-scholar-endpoint"),
@@ -119,14 +132,16 @@ async function runSearch() {
     const data = await postJson("/api/search", payload);
     state.plan = data.plan;
     state.papers = data.papers || [];
+    state.sourceMeta = data.sourceMeta || {};
     state.selectedKeys = new Set(state.papers.map((paper) => paperKey(paper)));
     state.reportPath = data.reportPath || "";
     renderPlan(data.plan);
     renderErrors(data.errors || {});
-    renderSourceSummary(data.errors || {});
+    renderSourceSummary(data.errors || {}, state.sourceMeta);
     applyResultControls();
+    const semanticNote = semanticStatusNote(state.sourceMeta.semantic_scholar);
     setStatus(
-      `检索完成：${state.papers.length} 篇候选文献${payload.fromYear ? `，${payload.fromYear} 年以来` : ""}。`,
+      `检索完成：${state.papers.length} 篇候选文献${payload.fromYear ? `，${payload.fromYear} 年以来` : ""}。${semanticNote ? ` ${semanticNote}` : ""}`,
     );
     updateSelectionUi();
     updateReportLink(data.reportUrl);
@@ -203,6 +218,14 @@ function renderConfig(config) {
 function renderSourceConfig(config) {
   const sources = config.sources || {};
   els.semanticScholarApiKey.value = "";
+  els.semanticScholarMonthlySearchBudget.value =
+    sources.semantic_scholar?.monthlySearchBudget || 250;
+  els.semanticScholarWarningRemaining.value =
+    sources.semantic_scholar?.warningRemaining || 50;
+  els.semanticScholarCacheOnlyRemaining.value =
+    sources.semantic_scholar?.cacheOnlyRemaining || 25;
+  els.semanticScholarCacheTtlDays.value =
+    sources.semantic_scholar?.cacheTtlDays || 30;
   els.clearSemanticScholarApiKey.checked = false;
   els.googleScholarApiKey.value = "";
   els.googleScholarEndpoint.value =
@@ -249,6 +272,18 @@ async function saveSourceConfig() {
       fromYear: els.fromYear.value ? Number(els.fromYear.value) : null,
       preferRecent: els.preferRecent.checked,
       semanticScholarApiKey: els.semanticScholarApiKey.value.trim(),
+      semanticScholarMonthlySearchBudget: Number(
+        els.semanticScholarMonthlySearchBudget.value || 250,
+      ),
+      semanticScholarWarningRemaining: Number(
+        els.semanticScholarWarningRemaining.value || 50,
+      ),
+      semanticScholarCacheOnlyRemaining: Number(
+        els.semanticScholarCacheOnlyRemaining.value || 25,
+      ),
+      semanticScholarCacheTtlDays: Number(
+        els.semanticScholarCacheTtlDays.value || 30,
+      ),
       clearSemanticScholarApiKey: els.clearSemanticScholarApiKey.checked,
       googleScholarApiKey: els.googleScholarApiKey.value.trim(),
       googleScholarEndpoint: els.googleScholarEndpoint.value.trim(),
@@ -315,11 +350,28 @@ function setSourceConfigStatus(message) {
 function sourceConfigText() {
   const sources = state.config?.sources || {};
   const names = [
-    sourceReadyText("semantic_scholar", "Semantic Scholar", sources),
+    semanticConfigText(sources.semantic_scholar),
     sourceReadyText("google_scholar", "Google Scholar", sources),
     sourceReadyText("web_of_science", "Web of Science", sources),
   ];
   return names.join(" · ");
+}
+
+function semanticConfigText(status) {
+  if (!status) return "Semantic Scholar 未配置";
+  const base = status.configured
+    ? "Semantic Scholar 已配置"
+    : "Semantic Scholar 未配置";
+  const remaining = status.remainingThisMonth ?? "?";
+  const total = status.monthlySearchBudget ?? "?";
+  const cacheDays = status.cacheTtlDays ?? 30;
+  const mode =
+    status.budgetStatus === "cache_only"
+      ? "缓存模式"
+      : status.budgetStatus === "warning"
+        ? "预警"
+        : "正常";
+  return `${base} (${remaining}/${total}, ${mode}, 缓存${cacheDays}天)`;
 }
 
 function sourceReadyText(key, label, sources) {
@@ -455,11 +507,11 @@ function renderErrors(errors) {
     .join("");
 }
 
-function renderSourceSummary(errors = {}) {
-  renderSourceBadges(errors);
+function renderSourceSummary(errors = {}, sourceMeta = {}) {
+  renderSourceBadges(errors, sourceMeta);
 }
 
-function renderSourceBadges(errors = {}) {
+function renderSourceBadges(errors = {}, sourceMeta = {}) {
   const sources = state.config?.sources || {};
   const selected = new Set(selectedSources());
   const counts = countSources();
@@ -473,15 +525,26 @@ function renderSourceBadges(errors = {}) {
   els.sourceStatus.innerHTML = "";
   for (const key of keys) {
     const meta = sources[key] || {};
+    const liveMeta = sourceMeta[key] || {};
     const badge = document.createElement("span");
     const configured = meta.configured !== false;
     const hasError = Boolean(errors[key]);
-    badge.className = `source-badge ${selected.has(key) ? "selected" : ""} ${configured ? "ready" : "needs-key"} ${hasError ? "source-error" : ""}`;
+    const budgetStatus = liveMeta.budgetStatus || meta.budgetStatus || "ok";
+    const budgetClass =
+      key === "semantic_scholar" && budgetStatus === "cache_only"
+        ? "cache-only"
+        : key === "semantic_scholar" && budgetStatus === "warning"
+          ? "warning"
+          : "";
+    badge.className = `source-badge ${selected.has(key) ? "selected" : ""} ${configured ? "ready" : "needs-key"} ${hasError ? "source-error" : ""} ${budgetClass}`;
     const label = meta.label || key;
     const count = counts[key] || 0;
     let suffix = count ? `${count} 篇` : selected.has(key) ? "待检索" : "未选";
     if (hasError) suffix = "出错";
     if (meta.requiresKey && !meta.configured) suffix = "需 Key";
+    if (key === "semantic_scholar" && liveMeta.usedCache) suffix = "缓存命中";
+    if (key === "semantic_scholar" && budgetStatus === "warning") suffix = "预警";
+    if (key === "semantic_scholar" && budgetStatus === "cache_only") suffix = "缓存模式";
     badge.textContent = `${label}: ${suffix}`;
     els.sourceStatus.append(badge);
   }
@@ -612,6 +675,13 @@ function scoreText(paper) {
   const sourceScore = paper.score ?? "待补";
   const reasons = (paper.relevance_reasons || []).slice(0, 4).join("，");
   return `相关性 ${relevance} · 来源分 ${sourceScore}${reasons ? ` · 命中 ${reasons}` : ""}`;
+}
+
+function semanticStatusNote(meta) {
+  if (!meta) return "";
+  if (meta.warningMessage) return meta.warningMessage;
+  if (meta.usedCache) return "Semantic Scholar used cached results.";
+  return "";
 }
 
 function addLink(parent, label, href) {

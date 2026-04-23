@@ -5,10 +5,14 @@ request_timeout_seconds = 20
 max_results_per_source = 20
 from_year = 2022
 prefer_recent = true
-enabled_sources = ["openalex", "crossref", "semantic_scholar"]
+enabled_sources = ["openalex", "crossref"]
 
 [semantic_scholar]
 api_key = ""
+monthly_search_budget = 250
+cache_ttl_days = 30
+warning_remaining = 50
+cache_only_remaining = 25
 
 [google_scholar]
 api_key = ""

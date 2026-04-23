@@ -52,3 +52,14 @@ class Paper:
         if not data["raw"]:
             data.pop("raw")
         return data
+
+
+@dataclass(slots=True)
+class SourceMeta:
+    used_cache: bool = False
+    budget_status: str = "ok"
+    remaining_this_month: int | None = None
+    warning_message: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

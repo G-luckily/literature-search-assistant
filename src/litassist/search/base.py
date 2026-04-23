@@ -6,7 +6,9 @@ from litassist.models import Paper
 
 
 class SearchError(RuntimeError):
-    pass
+    def __init__(self, message: str, meta: dict | None = None):
+        super().__init__(message)
+        self.meta = meta or {}
 
 
 class Searcher(ABC):

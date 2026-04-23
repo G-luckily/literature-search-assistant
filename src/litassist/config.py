@@ -18,13 +18,17 @@ class GeneralConfig:
     from_year: int | None = field(default_factory=lambda: date.today().year - 4)
     prefer_recent: bool = True
     enabled_sources: list[str] = field(
-        default_factory=lambda: ["openalex", "crossref", "semantic_scholar"]
+        default_factory=lambda: ["openalex", "crossref"]
     )
 
 
 @dataclass(slots=True)
 class SemanticScholarConfig:
     api_key: str = ""
+    monthly_search_budget: int = 250
+    cache_ttl_days: int = 30
+    warning_remaining: int = 50
+    cache_only_remaining: int = 25
 
 
 @dataclass(slots=True)
@@ -96,6 +100,22 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     semantic_scholar.api_key = os.getenv(
         "SEMANTIC_SCHOLAR_API_KEY", semantic_scholar.api_key
     )
+    if os.getenv("SEMANTIC_SCHOLAR_MONTHLY_SEARCH_BUDGET"):
+        semantic_scholar.monthly_search_budget = int(
+            os.getenv("SEMANTIC_SCHOLAR_MONTHLY_SEARCH_BUDGET", "250")
+        )
+    if os.getenv("SEMANTIC_SCHOLAR_CACHE_TTL_DAYS"):
+        semantic_scholar.cache_ttl_days = int(
+            os.getenv("SEMANTIC_SCHOLAR_CACHE_TTL_DAYS", "30")
+        )
+    if os.getenv("SEMANTIC_SCHOLAR_WARNING_REMAINING"):
+        semantic_scholar.warning_remaining = int(
+            os.getenv("SEMANTIC_SCHOLAR_WARNING_REMAINING", "50")
+        )
+    if os.getenv("SEMANTIC_SCHOLAR_CACHE_ONLY_REMAINING"):
+        semantic_scholar.cache_only_remaining = int(
+            os.getenv("SEMANTIC_SCHOLAR_CACHE_ONLY_REMAINING", "25")
+        )
     web_of_science.api_key = os.getenv("WOS_API_KEY", web_of_science.api_key)
     google_scholar.api_key = os.getenv(
         "SERPAPI_API_KEY",

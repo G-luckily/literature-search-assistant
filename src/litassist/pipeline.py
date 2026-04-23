@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
+from pathlib import Path
+from typing import Any
 
 from .config import AppConfig
 from .dedupe import dedupe_papers
@@ -24,6 +26,7 @@ class SearchRun:
     plan: ResearchPlan
     papers: list[Paper]
     errors: dict[str, str]
+    source_meta: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def run_search(
@@ -36,8 +39,10 @@ def run_search(
     use_llm: bool | None = None,
     from_year: int | None = None,
     prefer_recent: bool | None = None,
+    state_root: str | Path | None = None,
 ) -> SearchRun:
     config = _runtime_config(config, from_year=from_year, prefer_recent=prefer_recent)
+    resolved_state_root = Path(state_root or Path.cwd()).resolve()
     plan = _build_search_plan(
         need,
         config=config,
@@ -51,6 +56,7 @@ def run_search(
 
     papers: list[Paper] = []
     errors: dict[str, str] = {}
+    source_meta: dict[str, dict[str, Any]] = {}
     for source in selected_sources:
         searcher = searchers.get(source)
         if not searcher:
@@ -58,9 +64,22 @@ def run_search(
             continue
         query = plan.queries.get(source) or plan.queries["openalex"]
         try:
-            source_papers = searcher.search(query, per_source_limit)
+            if (
+                source == "semantic_scholar"
+                and isinstance(searcher, SemanticScholarSearcher)
+            ):
+                source_papers, meta = searcher.search_with_budget(
+                    query,
+                    per_source_limit,
+                    state_root=resolved_state_root,
+                )
+                source_meta[source] = meta.to_dict()
+            else:
+                source_papers = searcher.search(query, per_source_limit)
         except SearchError as exc:
             errors[source] = str(exc)
+            if exc.meta:
+                source_meta[source] = dict(exc.meta)
             continue
         for paper in source_papers:
             paper.tags.extend([f"source:{source}", "status:to-screen"])
@@ -71,7 +90,12 @@ def run_search(
     enriched = enrich_papers(deduped, plan, config.general)
     enriched = _filter_by_year(enriched, config.general.from_year)
     enriched = _filter_low_relevance(enriched)
-    return SearchRun(plan=plan, papers=dedupe_papers(enriched), errors=errors)
+    return SearchRun(
+        plan=plan,
+        papers=dedupe_papers(enriched),
+        errors=errors,
+        source_meta=source_meta,
+    )
 
 
 def _build_search_plan(

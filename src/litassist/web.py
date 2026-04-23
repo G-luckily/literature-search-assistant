@@ -11,10 +11,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from .config import AppConfig, load_config, save_llm_config, save_source_config
+from .config import (
+    AppConfig,
+    SemanticScholarConfig,
+    load_config,
+    save_llm_config,
+    save_source_config,
+)
 from .models import Paper
 from .pipeline import _build_search_plan, run_search
 from .report import write_run
+from .semantic_scholar_state import get_budget_state
 from .zotero import import_papers
 
 
@@ -106,6 +113,7 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             prefer_recent=(
                 bool(payload["preferRecent"]) if "preferRecent" in payload else None
             ),
+            state_root=self.server.project_root,
         )
         run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
         out_dir = self.server.project_root / "runs" / "web" / run_id
@@ -117,6 +125,7 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 "plan": run.plan.to_dict(),
                 "papers": [paper.to_dict() for paper in run.papers],
                 "errors": run.errors,
+                "sourceMeta": _serialize_source_meta(run.source_meta),
                 "reportPath": str(out_dir / "report.md"),
                 "reportUrl": f"/runs/web/{run_id}/report.md",
             }
@@ -191,10 +200,25 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         values: dict[str, Any] = {
             "from_year": from_year,
             "prefer_recent": bool(payload.get("preferRecent")),
-            "semantic_scholar": _api_key_update(payload, "semanticScholar"),
+            "semantic_scholar": {
+                **_api_key_update(payload, "semanticScholar"),
+                **_numeric_updates(
+                    payload,
+                    {
+                        "monthly_search_budget": "semanticScholarMonthlySearchBudget",
+                        "cache_ttl_days": "semanticScholarCacheTtlDays",
+                        "warning_remaining": "semanticScholarWarningRemaining",
+                        "cache_only_remaining": "semanticScholarCacheOnlyRemaining",
+                    },
+                ),
+            },
             "web_of_science": _api_key_update(payload, "webOfScience"),
             "google_scholar": _api_key_update(payload, "googleScholar"),
         }
+        _validate_semantic_budget_updates(
+            values["semantic_scholar"],
+            self.server.config.semantic_scholar,
+        )
         web_endpoint = _optional_text(payload, "webOfScienceEndpoint")
         google_endpoint = _optional_text(payload, "googleScholarEndpoint")
         if web_endpoint:
@@ -208,6 +232,10 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
     def _config_payload(self) -> dict[str, Any]:
         general = self.server.config.general
         llm = self.server.config.llm
+        semantic_budget = get_budget_state(
+            self.server.project_root,
+            self.server.config.semantic_scholar,
+        )
         return {
             "configPath": str(self.server.config_path),
             "general": {
@@ -237,6 +265,13 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                     "label": "Semantic Scholar",
                     "configured": bool(self.server.config.semantic_scholar.api_key),
                     "requiresKey": True,
+                    "monthlySearchBudget": semantic_budget.monthly_search_budget,
+                    "usedThisMonth": semantic_budget.used_this_month,
+                    "remainingThisMonth": semantic_budget.remaining_this_month,
+                    "cacheTtlDays": semantic_budget.cache_ttl_days,
+                    "warningRemaining": semantic_budget.warning_remaining,
+                    "cacheOnlyRemaining": semantic_budget.cache_only_remaining,
+                    "budgetStatus": semantic_budget.budget_status,
                 },
                 "google_scholar": {
                     "label": "Google Scholar via SerpApi",
@@ -384,6 +419,63 @@ def _api_key_update(payload: dict[str, Any], prefix: str) -> dict[str, str | Non
     if api_key and api_key.strip():
         return {"api_key": api_key.strip()}
     return {}
+
+
+def _numeric_updates(
+    payload: dict[str, Any],
+    keys: dict[str, str],
+) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for config_key, payload_key in keys.items():
+        value = _optional_int(payload, payload_key)
+        if value is not None:
+            result[config_key] = value
+    return result
+
+
+def _serialize_source_meta(source_meta: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    serialized: dict[str, dict[str, Any]] = {}
+    for source, meta in source_meta.items():
+        serialized[source] = {
+            "usedCache": bool(meta.get("used_cache")),
+            "budgetStatus": meta.get("budget_status") or "",
+            "remainingThisMonth": meta.get("remaining_this_month"),
+            "warningMessage": meta.get("warning_message") or "",
+        }
+    return serialized
+
+
+def _validate_semantic_budget_updates(
+    values: dict[str, Any],
+    current: SemanticScholarConfig,
+) -> None:
+    merged = {
+        "monthly_search_budget": values.get(
+            "monthly_search_budget",
+            current.monthly_search_budget,
+        ),
+        "cache_ttl_days": values.get("cache_ttl_days", current.cache_ttl_days),
+        "warning_remaining": values.get(
+            "warning_remaining",
+            current.warning_remaining,
+        ),
+        "cache_only_remaining": values.get(
+            "cache_only_remaining",
+            current.cache_only_remaining,
+        ),
+    }
+    for key in (
+        "monthly_search_budget",
+        "cache_ttl_days",
+        "warning_remaining",
+        "cache_only_remaining",
+    ):
+        if int(merged[key]) <= 0:
+            raise ValueError(f"{key} must be positive")
+    if int(merged["warning_remaining"]) < int(merged["cache_only_remaining"]):
+        raise ValueError(
+            "warning_remaining must be greater than or equal to cache_only_remaining"
+        )
 
 
 def _list_of_text(value: Any) -> list[str]:

@@ -4,8 +4,11 @@ import threading
 from pathlib import Path
 
 import httpx
+import pytest
 
 from litassist.config import AppConfig, load_config
+from litassist.models import ResearchPlan
+from litassist.pipeline import SearchRun
 from litassist.web import LiteratureWebServer
 
 
@@ -96,6 +99,10 @@ def test_web_updates_source_config_without_returning_api_keys(tmp_path: Path):
                     "fromYear": 2022,
                     "preferRecent": True,
                     "semanticScholarApiKey": "semantic-secret",
+                    "semanticScholarMonthlySearchBudget": 250,
+                    "semanticScholarWarningRemaining": 50,
+                    "semanticScholarCacheOnlyRemaining": 25,
+                    "semanticScholarCacheTtlDays": 30,
                     "googleScholarApiKey": "serp-secret",
                     "googleScholarEndpoint": "https://serpapi.com/search.json",
                     "webOfScienceApiKey": "wos-secret",
@@ -111,6 +118,9 @@ def test_web_updates_source_config_without_returning_api_keys(tmp_path: Path):
     assert saved.status_code == 200
     assert payload["general"]["fromYear"] == 2022
     assert payload["sources"]["semantic_scholar"]["configured"] is True
+    assert payload["sources"]["semantic_scholar"]["monthlySearchBudget"] == 250
+    assert payload["sources"]["semantic_scholar"]["cacheTtlDays"] == 30
+    assert payload["sources"]["semantic_scholar"]["budgetStatus"] == "ok"
     assert payload["sources"]["google_scholar"]["configured"] is True
     assert payload["sources"]["web_of_science"]["configured"] is True
     assert "apiKey" not in str(payload)
@@ -118,3 +128,47 @@ def test_web_updates_source_config_without_returning_api_keys(tmp_path: Path):
     assert 'api_key = "semantic-secret"' in text
     assert 'api_key = "serp-secret"' in text
     assert 'api_key = "wos-secret"' in text
+
+
+def test_web_search_serializes_source_meta(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def fake_run_search(*args, **kwargs):
+        return SearchRun(
+            plan=ResearchPlan(
+                need="test",
+                zh_keywords=["人工智能"],
+                en_keywords=["artificial intelligence"],
+                queries={"openalex": "test"},
+            ),
+            papers=[],
+            errors={},
+            source_meta={
+                "semantic_scholar": {
+                    "used_cache": True,
+                    "budget_status": "warning",
+                    "remaining_this_month": 42,
+                    "warning_message": "budget low",
+                }
+            },
+        )
+
+    monkeypatch.setattr("litassist.web.run_search", fake_run_search)
+    server = LiteratureWebServer(("127.0.0.1", 0), AppConfig(), tmp_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+
+    try:
+        with httpx.Client(timeout=5, trust_env=False) as client:
+            response = client.post(
+                f"{base_url}/api/search",
+                json={"need": "人工智能辅助文献检索"},
+            )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    payload = response.json()
+    assert payload["sourceMeta"]["semantic_scholar"]["usedCache"] is True
+    assert payload["sourceMeta"]["semantic_scholar"]["budgetStatus"] == "warning"
+    assert payload["sourceMeta"]["semantic_scholar"]["remainingThisMonth"] == 42

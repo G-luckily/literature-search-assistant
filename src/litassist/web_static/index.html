@@ -38,7 +38,7 @@
           <legend>检索来源</legend>
           <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
           <label><input type="checkbox" name="source" value="crossref" checked /> Crossref</label>
-          <label><input type="checkbox" name="source" value="semantic_scholar" checked /> Semantic Scholar</label>
+          <label><input type="checkbox" name="source" value="semantic_scholar" /> Semantic Scholar</label>
           <label><input type="checkbox" name="source" value="google_scholar" /> Google Scholar</label>
           <label><input type="checkbox" name="source" value="web_of_science" /> Web of Science</label>
         </fieldset>
@@ -67,6 +67,22 @@
             <label>
               Semantic Scholar API Key
               <input id="semantic-scholar-api-key" type="password" placeholder="留空则保留现有密钥" autocomplete="off" />
+            </label>
+            <label>
+              Semantic Scholar Monthly Search Budget
+              <input id="semantic-scholar-monthly-search-budget" type="number" min="1" value="250" />
+            </label>
+            <label>
+              Semantic Scholar Warning Threshold
+              <input id="semantic-scholar-warning-remaining" type="number" min="1" value="50" />
+            </label>
+            <label>
+              Semantic Scholar Cache-only Threshold
+              <input id="semantic-scholar-cache-only-remaining" type="number" min="1" value="25" />
+            </label>
+            <label>
+              Semantic Scholar Cache TTL (days)
+              <input id="semantic-scholar-cache-ttl-days" type="number" min="1" value="30" />
             </label>
             <label class="clear-key-row">
               <input id="clear-semantic-scholar-api-key" type="checkbox" />

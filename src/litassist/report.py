@@ -12,6 +12,7 @@ def write_run(run: SearchRun, out_dir: str | Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     write_json(target / "search_plan.json", run.plan.to_dict())
     write_json(target / "papers.json", [paper.to_dict() for paper in run.papers])
+    write_json(target / "source_meta.json", run.source_meta)
     (target / "report.md").write_text(render_markdown(run), encoding="utf-8")
 
 
@@ -79,6 +80,20 @@ def render_markdown(run: SearchRun) -> str:
         lines.extend(["", "## Source Errors", ""])
         for source, error in run.errors.items():
             lines.append(f"- `{source}`: {error}")
+
+    if run.source_meta:
+        lines.extend(["", "## Source Metadata", ""])
+        for source, meta in run.source_meta.items():
+            fragments = [f"`{source}`"]
+            if meta.get("budget_status"):
+                fragments.append(f"status={meta['budget_status']}")
+            if meta.get("remaining_this_month") is not None:
+                fragments.append(f"remaining={meta['remaining_this_month']}")
+            if meta.get("used_cache"):
+                fragments.append("cache=hit")
+            if meta.get("warning_message"):
+                fragments.append(meta["warning_message"])
+            lines.append("- " + " | ".join(fragments))
 
     lines.extend(["", "## Results", "", f"Total after dedupe: {len(run.papers)}", ""])
     for index, paper in enumerate(run.papers, start=1):

@@ -3,236 +3,475 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Literature Search Assistant</title>
+    <title>文献智研工作台</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <section class="input-pane" aria-labelledby="request-title">
-        <div class="brand-row">
-          <img
-            src="https://images.unsplash.com/photo-1495446815901-a7297e633e8d?auto=format&fit=crop&w=500&q=80"
-            alt="书架与研究资料"
-          />
-          <div>
-            <p class="eyebrow">Zotero Literature Assistant</p>
-            <h1 id="request-title">研究入口</h1>
+    <div class="studio-shell">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="sidebar-brand">
+            <h1>研究工作台</h1>
+            <p>精准文献综述</p>
           </div>
+
+          <nav class="sidebar-nav" aria-label="Workspace navigation">
+            <a class="sidebar-link active" href="#">
+              <span class="sidebar-icon">⌕</span>
+              <span>检索工作区</span>
+            </a>
+            <a class="sidebar-link" href="#">
+              <span class="sidebar-icon">▣</span>
+              <span>文献收藏</span>
+            </a>
+            <a class="sidebar-link" href="#">
+              <span class="sidebar-icon">⋈</span>
+              <span>检索策略</span>
+            </a>
+            <a class="sidebar-link" href="#">
+              <span class="sidebar-icon">↺</span>
+              <span>历史归档</span>
+            </a>
+          </nav>
         </div>
 
-        <label for="need">研究需求</label>
-        <textarea id="need" rows="7">人工智能辅助文献检索 Zotero 文献管理</textarea>
-
-        <div class="field-grid">
-          <label>
-            中文关键词
-            <input id="zh-keywords" placeholder="可选，用逗号分隔" />
-          </label>
-          <label>
-            English keywords
-            <input id="en-keywords" placeholder="Optional, comma separated" />
-          </label>
+        <div class="sidebar-bottom">
+          <a class="sidebar-link muted" href="#">
+            <span class="sidebar-icon">⚙</span>
+            <span>设置</span>
+          </a>
+          <a class="sidebar-link muted" href="#">
+            <span class="sidebar-icon">?</span>
+            <span>帮助支持</span>
+          </a>
         </div>
+      </aside>
 
-        <fieldset>
-          <legend>检索来源</legend>
-          <label><input type="checkbox" name="source" value="openalex" checked /> OpenAlex</label>
-          <label><input type="checkbox" name="source" value="crossref" checked /> Crossref</label>
-          <label><input type="checkbox" name="source" value="semantic_scholar" /> Semantic Scholar</label>
-          <label><input type="checkbox" name="source" value="google_scholar" /> Google Scholar</label>
-          <label><input type="checkbox" name="source" value="web_of_science" /> Web of Science</label>
-        </fieldset>
-
-        <div id="source-status" class="source-status"></div>
-
-        <div class="field-grid">
-          <label>
-            起始年份
-            <input id="from-year" type="number" min="1900" max="2100" />
-          </label>
-          <label class="llm-toggle">
-            <input id="prefer-recent" type="checkbox" checked />
-            优先检索最新文献
-          </label>
-        </div>
-
-        <label class="llm-toggle">
-          <input id="use-llm" type="checkbox" />
-          使用配置的 LLM 拆解研究问题
-        </label>
-
-        <details class="config-panel">
-          <summary>数据源配置</summary>
-          <div class="config-grid">
-            <label>
-              Semantic Scholar API Key
-              <input id="semantic-scholar-api-key" type="password" placeholder="留空则保留现有密钥" autocomplete="off" />
-            </label>
-            <label>
-              Semantic Scholar Monthly Search Budget
-              <input id="semantic-scholar-monthly-search-budget" type="number" min="1" value="250" />
-            </label>
-            <label>
-              Semantic Scholar Warning Threshold
-              <input id="semantic-scholar-warning-remaining" type="number" min="1" value="50" />
-            </label>
-            <label>
-              Semantic Scholar Cache-only Threshold
-              <input id="semantic-scholar-cache-only-remaining" type="number" min="1" value="25" />
-            </label>
-            <label>
-              Semantic Scholar Cache TTL (days)
-              <input id="semantic-scholar-cache-ttl-days" type="number" min="1" value="30" />
-            </label>
-            <label class="clear-key-row">
-              <input id="clear-semantic-scholar-api-key" type="checkbox" />
-              清空 Semantic Scholar Key
-            </label>
-            <label>
-              Google Scholar SerpApi Key
-              <input id="google-scholar-api-key" type="password" placeholder="SerpApi key，留空则保留" autocomplete="off" />
-            </label>
-            <label>
-              Google Scholar SerpApi Endpoint
-              <input id="google-scholar-endpoint" type="text" placeholder="https://serpapi.com/search.json" />
-            </label>
-            <label class="clear-key-row">
-              <input id="clear-google-scholar-api-key" type="checkbox" />
-              清空 Google Scholar SerpApi Key
-            </label>
-            <label>
-              Web of Science API Key
-              <input id="web-of-science-api-key" type="password" placeholder="留空则保留现有密钥" autocomplete="off" />
-            </label>
-            <label>
-              Web of Science Endpoint
-              <input id="web-of-science-endpoint" type="text" placeholder="https://api.clarivate.com/apis/wos-starter/v1/documents" />
-            </label>
-            <label class="clear-key-row">
-              <input id="clear-web-of-science-api-key" type="checkbox" />
-              清空 Web of Science Key
-            </label>
+      <div class="workspace-shell">
+        <header class="topbar">
+          <div class="topbar-brand">文献智研</div>
+          <nav class="topbar-nav" aria-label="Top navigation">
+            <a class="topbar-link active" href="#">总览</a>
+            <a class="topbar-link" href="#">项目</a>
+            <a class="topbar-link" href="#">文献池</a>
+          </nav>
+          <div class="topbar-actions" aria-label="Top bar actions">
+            <button type="button" class="topbar-icon" aria-label="通知">🔔</button>
+            <button type="button" class="topbar-icon" aria-label="帮助">?</button>
+            <button type="button" class="avatar-chip" aria-label="个人资料">G</button>
           </div>
-          <div class="config-actions">
-            <button id="save-source-config" type="button">保存数据源配置</button>
-            <span id="source-config-status">正在读取配置。</span>
-          </div>
-        </details>
+        </header>
 
-        <details class="config-panel">
-          <summary>LLM 配置</summary>
-          <div class="config-grid">
-            <label>
-              默认启用 LLM
-              <input id="llm-enabled" type="checkbox" />
-            </label>
-            <label>
-              Provider
-              <select id="llm-provider">
-                <option value="deepseek">DeepSeek</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </label>
-            <label>
-              Model
-              <input id="llm-model" type="text" placeholder="deepseek-chat" />
-            </label>
-            <label>
-              Base URL / Endpoint
-              <input id="llm-endpoint" type="text" placeholder="https://api.deepseek.com/v1" />
-            </label>
-            <label>
-              API Key
-              <input id="llm-api-key" type="password" placeholder="留空则保留现有密钥" autocomplete="off" />
-            </label>
-            <label>
-              请求超时（秒）
-              <input id="llm-timeout" type="number" min="5" max="180" value="45" />
-            </label>
-          </div>
-          <label class="clear-key-row">
-            <input id="llm-clear-key" type="checkbox" />
-            清空已保存的 API Key
-          </label>
-          <div class="config-actions">
-            <button id="save-llm-config" type="button">保存 LLM 配置</button>
-            <span id="llm-config-status">正在读取配置。</span>
-          </div>
-        </details>
+        <main class="dashboard">
+          <section class="brief-column">
+            <div class="panel-card brief-card">
+              <div class="section-intro">
+                <div>
+                  <p class="eyebrow">研究简报</p>
+                  <h2>需求配置</h2>
+                </div>
+              </div>
 
-        <label class="limit-label">
-          每源数量
-          <input id="limit" type="number" min="1" max="50" value="8" />
-        </label>
+              <label class="field">
+                <span>研究问题</span>
+                <textarea id="need" rows="5">人工智能辅助文献检索 Zotero 文献管理</textarea>
+              </label>
 
-        <div class="actions">
-          <button id="plan-button" type="button">生成检索计划</button>
-          <button id="search-button" type="button" class="primary">开始检索</button>
-        </div>
+              <div class="field-grid dual-grid">
+                <label class="field">
+                  <span>中文关键词</span>
+                  <input id="zh-keywords" placeholder="例如：人工智能检索, Zotero, 文献管理" />
+                </label>
+                <label class="field">
+                  <span>英文关键词</span>
+                  <input id="en-keywords" placeholder="例如：请填写英文检索关键词" />
+                </label>
+              </div>
 
-        <div class="zotero-row">
-          <button id="dry-run-button" type="button" disabled>导入选中项</button>
-          <label><input id="apply-import" type="checkbox" /> 写入 Zotero</label>
-        </div>
+              <div class="section-block">
+                <div class="section-minihead">
+                  <h3>数据源</h3>
+                  <span id="selected-source-count" class="count-badge">已选 2 个</span>
+                </div>
 
-        <p id="status" class="status" role="status">准备好了。</p>
-      </section>
+                <div class="source-chip-grid">
+                  <label class="source-chip-option">
+                    <input type="checkbox" name="source" value="openalex" checked />
+                    <span>OpenAlex</span>
+                  </label>
+                  <label class="source-chip-option">
+                    <input type="checkbox" name="source" value="crossref" checked />
+                    <span>Crossref</span>
+                  </label>
+                  <label class="source-chip-option">
+                    <input type="checkbox" name="source" value="semantic_scholar" />
+                    <span>Semantic Scholar</span>
+                  </label>
+                  <label class="source-chip-option">
+                    <input type="checkbox" name="source" value="google_scholar" />
+                    <span>Google Scholar</span>
+                  </label>
+                  <label class="source-chip-option">
+                    <input type="checkbox" name="source" value="web_of_science" />
+                    <span>Web of Science</span>
+                  </label>
+                </div>
 
-      <section class="results-pane" aria-live="polite">
-        <div class="summary-band">
-          <div>
-            <p class="eyebrow">Plan</p>
-            <h2>关键词与检索式</h2>
-          </div>
-          <span id="paper-count" class="count-pill">0 篇</span>
-        </div>
+                <div id="source-status" class="source-status"></div>
+              </div>
 
-        <div id="keyword-output" class="keyword-output">
-          <p>先生成计划，或直接开始检索。</p>
-        </div>
+              <div class="section-block">
+                <div class="section-minihead">
+                  <h3>检索策略</h3>
+                </div>
 
-        <div id="plan-detail-output" class="plan-detail-output"></div>
+                <div class="field-grid strategy-grid">
+                  <label class="field">
+                    <span>起始年份</span>
+                    <input id="from-year" type="number" min="1900" max="2100" />
+                  </label>
+                  <label class="field">
+                    <span>每源条数</span>
+                    <input id="limit" type="number" min="1" max="50" value="8" />
+                  </label>
+                </div>
 
-        <div id="error-output" class="error-output" hidden></div>
+                <div class="toggle-stack">
+                  <label class="check-line">
+                    <input id="prefer-recent" type="checkbox" checked />
+                    <span>
+                      <strong>优先最新文献</strong>
+                      <small>适合做趋势扫描、方法更新和近年证据汇总。</small>
+                    </span>
+                  </label>
+                  <label class="check-line">
+                    <input id="use-llm" type="checkbox" />
+                    <span>
+                      <strong>使用已配置大模型规划器</strong>
+                      <small>调用已配置模型，对研究问题做结构化拆解。</small>
+                    </span>
+                  </label>
+                </div>
+              </div>
 
-        <div class="section-heading">
-          <div>
-            <h2>候选文献</h2>
-            <p id="selection-count" class="selection-count">已选 0 篇</p>
-          </div>
-          <a id="report-link" href="#" target="_blank" hidden>打开报告</a>
-        </div>
-        <div class="result-tools">
-          <input id="filter-text" placeholder="在标题、作者、摘要中筛选" />
-          <label><input id="pdf-only" type="checkbox" /> 只看可获取全文</label>
-          <label>
-            排序
-            <select id="sort-by">
-              <option value="recent">新近优先</option>
-              <option value="relevance">相关性</option>
-              <option value="year">年份</option>
-              <option value="citations">引用</option>
-            </select>
-          </label>
-          <button id="select-visible" type="button" disabled>选中当前结果</button>
-          <button id="clear-selection" type="button" disabled>清空选择</button>
-        </div>
-        <div id="papers" class="papers"></div>
-      </section>
-    </main>
+              <details class="config-panel">
+                <summary>
+                  <span>数据源设置</span>
+                  <small>Semantic Scholar / SerpApi / Web of Science</small>
+                </summary>
+                <div class="config-grid">
+                  <label class="field">
+                    <span>Semantic Scholar 接口密钥</span>
+                    <input
+                      id="semantic-scholar-api-key"
+                      type="password"
+                      placeholder="留空则保留现有密钥"
+                      autocomplete="off"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>月度检索预算</span>
+                    <input
+                      id="semantic-scholar-monthly-search-budget"
+                      type="number"
+                      min="1"
+                      value="250"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>预警阈值</span>
+                    <input
+                      id="semantic-scholar-warning-remaining"
+                      type="number"
+                      min="1"
+                      value="50"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>仅缓存阈值</span>
+                    <input
+                      id="semantic-scholar-cache-only-remaining"
+                      type="number"
+                      min="1"
+                      value="25"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>缓存有效期（天）</span>
+                    <input
+                      id="semantic-scholar-cache-ttl-days"
+                      type="number"
+                      min="1"
+                      value="30"
+                    />
+                  </label>
+                  <label class="inline-check">
+                    <input id="clear-semantic-scholar-api-key" type="checkbox" />
+                    <span>清空 Semantic Scholar 密钥</span>
+                  </label>
+                  <label class="field">
+                    <span>Google Scholar SerpApi 接口密钥</span>
+                    <input
+                      id="google-scholar-api-key"
+                      type="password"
+                      placeholder="SerpApi key，留空则保留"
+                      autocomplete="off"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>Google Scholar 接口地址</span>
+                    <input
+                      id="google-scholar-endpoint"
+                      type="text"
+                      placeholder="https://serpapi.com/search.json"
+                    />
+                  </label>
+                  <label class="inline-check">
+                    <input id="clear-google-scholar-api-key" type="checkbox" />
+                    <span>清空 Google Scholar SerpApi 密钥</span>
+                  </label>
+                  <label class="field">
+                    <span>Web of Science 接口密钥</span>
+                    <input
+                      id="web-of-science-api-key"
+                      type="password"
+                      placeholder="留空则保留现有密钥"
+                      autocomplete="off"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>Web of Science 接口地址</span>
+                    <input
+                      id="web-of-science-endpoint"
+                      type="text"
+                      placeholder="https://api.clarivate.com/apis/wos-starter/v1/documents"
+                    />
+                  </label>
+                  <label class="inline-check">
+                    <input id="clear-web-of-science-api-key" type="checkbox" />
+                    <span>清空 Web of Science 密钥</span>
+                  </label>
+                </div>
+                <div class="config-actions">
+                  <button id="save-source-config" type="button">保存数据源配置</button>
+                  <span id="source-config-status">正在读取配置。</span>
+                </div>
+              </details>
+
+              <details class="config-panel">
+                <summary>
+                  <span>大模型设置</span>
+                  <small>OpenAI / DeepSeek</small>
+                </summary>
+                <div class="config-grid">
+                  <label class="field checkbox-field">
+                    <span>默认启用规划器</span>
+                    <input id="llm-enabled" type="checkbox" />
+                  </label>
+                  <label class="field">
+                    <span>服务提供方</span>
+                    <select id="llm-provider">
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="openai">OpenAI</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>模型</span>
+                    <input id="llm-model" type="text" placeholder="deepseek-chat" />
+                  </label>
+                  <label class="field">
+                    <span>接口地址</span>
+                    <input id="llm-endpoint" type="text" placeholder="https://api.deepseek.com/v1" />
+                  </label>
+                  <label class="field">
+                    <span>接口密钥</span>
+                    <input
+                      id="llm-api-key"
+                      type="password"
+                      placeholder="留空则保留现有密钥"
+                      autocomplete="off"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>超时（秒）</span>
+                    <input id="llm-timeout" type="number" min="5" max="180" value="45" />
+                  </label>
+                </div>
+                <label class="inline-check">
+                  <input id="llm-clear-key" type="checkbox" />
+                  <span>清空已保存的接口密钥</span>
+                </label>
+                <div class="config-actions">
+                  <button id="save-llm-config" type="button">保存大模型配置</button>
+                  <span id="llm-config-status">正在读取配置。</span>
+                </div>
+              </details>
+            </div>
+
+            <div class="panel-card action-card">
+              <div class="action-stack">
+                <button id="plan-button" type="button" class="secondary-action">
+                  生成检索方案
+                </button>
+                <button id="search-button" type="button" class="primary-action">
+                  执行高级检索
+                </button>
+              </div>
+
+              <div class="action-subrow">
+                <button id="dry-run-button" type="button" disabled>导入选中项</button>
+                <label class="inline-check">
+                  <input id="apply-import" type="checkbox" />
+                  <span>写入 Zotero</span>
+                </label>
+              </div>
+
+              <p id="status" class="status" role="status">准备好了。</p>
+            </div>
+          </section>
+
+          <section class="analysis-column">
+            <div class="panel-card analytics-hero">
+              <div class="section-intro split-intro">
+                <div>
+                  <p class="eyebrow">工作流输出</p>
+                  <h2>分析看板</h2>
+                </div>
+                <span id="workflow-pill" class="workflow-pill">待命</span>
+              </div>
+
+              <div class="stats-grid">
+                <article class="stat-card">
+                  <div class="stat-icon">◉</div>
+                  <div>
+                    <span class="stat-label">数据源</span>
+                    <strong id="stat-source-count">02</strong>
+                  </div>
+                </article>
+                <article class="stat-card">
+                  <div class="stat-icon">▤</div>
+                  <div>
+                    <span class="stat-label">候选结果</span>
+                    <strong id="stat-paper-count">0</strong>
+                  </div>
+                </article>
+                <article class="stat-card">
+                  <div class="stat-icon">✓</div>
+                  <div>
+                    <span class="stat-label">状态</span>
+                    <strong id="stat-workflow-label">待命</strong>
+                    <small id="stat-workflow-detail">等待执行检索</small>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div class="analysis-grid">
+              <section class="panel-card logic-card">
+                <div class="card-head">
+                  <div>
+                    <p class="eyebrow">执行逻辑</p>
+                    <h3>流程步骤</h3>
+                  </div>
+                  <a id="report-link" class="ghost-link" href="#" target="_blank" hidden>
+                    查看完整日志
+                  </a>
+                </div>
+                <div id="execution-steps" class="step-list"></div>
+              </section>
+
+              <aside class="insight-card">
+                <p class="eyebrow">智能洞察</p>
+                <h3>范围建议</h3>
+                <p id="insight-text">
+                  先定义研究问题，系统会把核心概念、检索式和候选文献分析同步铺开。
+                </p>
+                <div class="insight-footer">
+                  <span class="insight-chip">细化范围</span>
+                </div>
+              </aside>
+            </div>
+
+            <section class="panel-card planner-card">
+              <div class="card-head">
+                <div>
+                  <p class="eyebrow">规划输出</p>
+                  <h3>关键词矩阵与检索逻辑</h3>
+                </div>
+                <span id="planner-mode" class="planner-mode">等待生成方案</span>
+              </div>
+
+              <div id="keyword-output" class="keyword-output">
+                <p class="empty-copy">先生成检索计划，系统会在这里展示关键词矩阵与检索式。</p>
+              </div>
+              <div id="plan-detail-output" class="plan-detail-output"></div>
+              <div id="error-output" class="error-output" hidden></div>
+            </section>
+
+            <section class="panel-card results-card">
+              <div class="card-head results-head">
+                <div>
+                  <p class="eyebrow">文献池</p>
+                  <h3>候选文献</h3>
+                  <p id="selection-count" class="selection-count">已选 0 篇</p>
+                </div>
+                <span id="results-count" class="results-count">0 条记录</span>
+              </div>
+
+              <div class="result-tools">
+                <input id="filter-text" placeholder="筛选当前结果" />
+                <label class="inline-check compact-check">
+                  <input id="pdf-only" type="checkbox" />
+                  <span>仅看可获取全文</span>
+                </label>
+                <label class="field compact-select">
+                  <span>排序</span>
+                  <select id="sort-by">
+                    <option value="relevance">相关性得分</option>
+                    <option value="recent">最新优先</option>
+                    <option value="year">年份</option>
+                    <option value="citations">引用量</option>
+                  </select>
+                </label>
+                <button id="select-visible" type="button" disabled>选中当前结果</button>
+                <button id="clear-selection" type="button" disabled>清空选择</button>
+              </div>
+
+              <div id="papers-empty" class="empty-state">
+                <h3>这里会显示候选文献</h3>
+                <p>执行检索后，结果会以分析卡片的形式展示在这里，支持筛选、排序与批量导入。</p>
+              </div>
+
+              <div id="papers" class="papers"></div>
+            </section>
+          </section>
+        </main>
+      </div>
+    </div>
 
     <template id="paper-template">
       <article class="paper-card">
-        <label class="paper-select">
-          <input type="checkbox" class="paper-checkbox" />
-          纳入 Zotero
-        </label>
-        <div class="paper-meta-line"></div>
-        <h3></h3>
-        <p class="authors"></p>
-        <div class="score-row"></div>
-        <p class="abstract"></p>
-        <div class="paper-links"></div>
+        <div class="paper-topline">
+          <div class="paper-tag-row">
+            <span class="paper-badge paper-rank-badge">最佳匹配</span>
+            <span class="paper-domain"></span>
+          </div>
+          <label class="paper-select">
+            <input type="checkbox" class="paper-checkbox" />
+            <span>纳入 Zotero</span>
+          </label>
+        </div>
+
+        <h4 class="paper-title"></h4>
+        <p class="paper-authors"></p>
+        <p class="paper-abstract"></p>
+
+        <div class="paper-metrics"></div>
+
+        <div class="paper-footer">
+          <div class="paper-meta-line"></div>
+          <div class="paper-links"></div>
+        </div>
       </article>
     </template>
 

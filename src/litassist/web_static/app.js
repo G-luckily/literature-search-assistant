@@ -3,6 +3,8 @@ const state = {
   papers: [],
   visiblePapers: [],
   selectedKeys: new Set(),
+  savedPapers: [],
+  history: [],
   reportPath: "",
   config: null,
   sourceMeta: {},
@@ -60,11 +62,21 @@ const els = {
   sortBy: document.querySelector("#sort-by"),
   selectVisible: document.querySelector("#select-visible"),
   clearSelection: document.querySelector("#clear-selection"),
+  saveSelected: document.querySelector("#save-selected"),
+  savedFilterText: document.querySelector("#saved-filter-text"),
+  clearSaved: document.querySelector("#clear-saved"),
   keywordOutput: document.querySelector("#keyword-output"),
   planDetailOutput: document.querySelector("#plan-detail-output"),
   errorOutput: document.querySelector("#error-output"),
   papersEmpty: document.querySelector("#papers-empty"),
   papers: document.querySelector("#papers"),
+  savedPapers: document.querySelector("#saved-papers"),
+  savedEmpty: document.querySelector("#saved-empty"),
+  savedCount: document.querySelector("#saved-count"),
+  savedUpdated: document.querySelector("#saved-updated"),
+  historyList: document.querySelector("#history-list"),
+  historyEmpty: document.querySelector("#history-empty"),
+  historyCount: document.querySelector("#history-count"),
   reportLink: document.querySelector("#report-link"),
   paperTemplate: document.querySelector("#paper-template"),
   selectedSourceCount: document.querySelector("#selected-source-count"),
@@ -100,6 +112,9 @@ els.pdfOnly.addEventListener("change", () => applyResultControls());
 els.sortBy.addEventListener("change", () => applyResultControls());
 els.selectVisible.addEventListener("click", () => selectVisiblePapers());
 els.clearSelection.addEventListener("click", () => clearSelection());
+els.saveSelected.addEventListener("click", () => saveSelectedPapers());
+els.savedFilterText.addEventListener("input", () => renderSavedPapers());
+els.clearSaved.addEventListener("click", () => clearSavedPapers());
 for (const input of sourceInputs) {
   input.addEventListener("change", () => {
     renderSourceBadges();
@@ -113,10 +128,13 @@ for (const link of [...els.topNavLinks, ...els.sidebarNavLinks]) {
   link.addEventListener("click", (event) => handleNavigation(event, link));
 }
 
+loadWorkspaceMemory();
 loadConfig();
 renderExecutionSteps(null);
 updateInsight(null);
 updateDashboard();
+renderSavedPapers();
+renderHistory();
 
 function handleNavigation(event, link) {
   event.preventDefault();
@@ -184,6 +202,11 @@ async function runPlan() {
     renderPlan(data.plan);
     setStatus("检索计划已生成。");
     setWorkflowStatus("方案就绪", "研究问题已经拆解为可执行检索步骤。");
+    addHistoryEntry("生成检索方案", {
+      need: payloadBase().need,
+      sources: selectedSources(),
+      planner: data.plan?.planner || "rule",
+    });
   } catch (error) {
     showError(error.message);
   } finally {
@@ -224,6 +247,12 @@ async function runSearch() {
         ? "部分数据源返回错误，已保留成功结果。"
         : "检索、去重与排序已完成。",
     );
+    addHistoryEntry("执行高级检索", {
+      need: payload.need,
+      sources: payload.sources,
+      papers: state.papers.length,
+      hasError: Object.keys(data.errors || {}).length > 0,
+    });
   } catch (error) {
     showError(error.message);
   } finally {
@@ -259,6 +288,12 @@ async function importZotero() {
     if (result.errors && result.errors.length) {
       showError(result.errors.join("\n"));
     }
+    addHistoryEntry(apply ? "写入 Zotero" : "预演导入 Zotero", {
+      selected: selectedPapers.length,
+      created: result.created || 0,
+      skipped: result.skipped || 0,
+      errors: (result.errors || []).length,
+    });
   } catch (error) {
     showError(error.message);
   } finally {
@@ -832,6 +867,12 @@ function renderPapers(papers) {
     addLink(links, "PDF", paper.pdf_url);
     if (paper.doi) addLink(links, "DOI", `https://doi.org/${paper.doi}`);
 
+    const favoriteButton = node.querySelector(".paper-favorite");
+    const saved = isSavedPaper(paper);
+    favoriteButton.textContent = saved ? "已收藏" : "收藏";
+    favoriteButton.classList.toggle("active", saved);
+    favoriteButton.addEventListener("click", () => toggleSavePaper(paper));
+
     els.papers.append(node);
   });
 
@@ -915,6 +956,7 @@ function updateSelectionUi() {
   els.dryRunButton.disabled = selected === 0;
   els.selectVisible.disabled = state.visiblePapers.length === 0;
   els.clearSelection.disabled = selected === 0;
+  els.saveSelected.disabled = selected === 0;
   updateDashboard();
 }
 
@@ -941,6 +983,200 @@ function setWorkflowStatus(label, detail) {
   state.workflowLabel = label;
   state.workflowDetail = detail;
   updateDashboard();
+}
+
+function loadWorkspaceMemory() {
+  try {
+    const savedRaw = localStorage.getItem("litassist.savedPapers.v1");
+    const historyRaw = localStorage.getItem("litassist.history.v1");
+    state.savedPapers = savedRaw ? JSON.parse(savedRaw) : [];
+    state.history = historyRaw ? JSON.parse(historyRaw) : [];
+  } catch {
+    state.savedPapers = [];
+    state.history = [];
+  }
+}
+
+function persistWorkspaceMemory() {
+  localStorage.setItem("litassist.savedPapers.v1", JSON.stringify(state.savedPapers));
+  localStorage.setItem("litassist.history.v1", JSON.stringify(state.history));
+}
+
+function isSavedPaper(paper) {
+  const key = paperKey(paper);
+  return state.savedPapers.some((item) => paperKey(item) === key);
+}
+
+function toggleSavePaper(paper) {
+  const key = paperKey(paper);
+  const index = state.savedPapers.findIndex((item) => paperKey(item) === key);
+  if (index >= 0) {
+    state.savedPapers.splice(index, 1);
+    setStatus("已从收藏中移除文献。");
+  } else {
+    state.savedPapers.unshift(paper);
+    setStatus("已加入文献收藏。");
+    addHistoryEntry("收藏文献", {
+      title: paper.title || "未命名文献",
+      year: paper.year || "未知",
+    });
+  }
+  persistWorkspaceMemory();
+  renderPapers(state.visiblePapers);
+  renderSavedPapers();
+}
+
+function saveSelectedPapers() {
+  const selectedPapers = state.papers.filter((paper) =>
+    state.selectedKeys.has(paperKey(paper)),
+  );
+  if (!selectedPapers.length) {
+    setStatus("没有选中文献，无法收藏。");
+    return;
+  }
+  let added = 0;
+  for (const paper of selectedPapers) {
+    if (isSavedPaper(paper)) continue;
+    state.savedPapers.unshift(paper);
+    added += 1;
+  }
+  persistWorkspaceMemory();
+  renderPapers(state.visiblePapers);
+  renderSavedPapers();
+  setStatus(`已收藏 ${added} 篇文献。`);
+  addHistoryEntry("批量收藏文献", {
+    selected: selectedPapers.length,
+    added,
+  });
+}
+
+function clearSavedPapers() {
+  if (!state.savedPapers.length) {
+    setStatus("收藏池当前为空。");
+    return;
+  }
+  const removed = state.savedPapers.length;
+  state.savedPapers = [];
+  persistWorkspaceMemory();
+  renderPapers(state.visiblePapers);
+  renderSavedPapers();
+  addHistoryEntry("清空收藏池", { removed });
+  setStatus("已清空收藏文献。");
+}
+
+function renderSavedPapers() {
+  const query = els.savedFilterText.value.trim().toLowerCase();
+  let papers = [...state.savedPapers];
+  if (query) {
+    papers = papers.filter((paper) =>
+      [paper.title || "", (paper.authors || []).join(" "), paper.venue || "", paper.abstract || ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }
+
+  els.savedPapers.innerHTML = "";
+  els.savedEmpty.hidden = papers.length !== 0;
+  els.savedCount.textContent = `已收藏 ${state.savedPapers.length} 篇`;
+  els.savedUpdated.textContent = state.savedPapers.length ? "已同步本地存储" : "暂无更新";
+  els.clearSaved.disabled = state.savedPapers.length === 0;
+
+  for (const paper of papers) {
+    const node = els.paperTemplate.content.firstElementChild.cloneNode(true);
+    node.dataset.paperKey = paperKey(paper);
+
+    const checkbox = node.querySelector(".paper-checkbox");
+    checkbox.checked = true;
+    checkbox.disabled = true;
+
+    node.querySelector(".paper-rank-badge").textContent = "收藏";
+    node.querySelector(".paper-domain").textContent = paperDomainLabel(paper);
+    node.querySelector(".paper-title").textContent = paper.title || "未命名文献";
+    node.querySelector(".paper-authors").textContent =
+      (paper.authors || []).slice(0, 8).join(", ") || "作者信息待补";
+    node.querySelector(".paper-abstract").textContent = trimText(
+      paper.abstract || "暂无摘要。",
+      420,
+    );
+
+    const metrics = node.querySelector(".paper-metrics");
+    addPaperMetric(metrics, "年份", paper.year || "暂无");
+    addPaperMetric(metrics, "引用", paper.cited_by_count ?? "暂无");
+    addPaperMetric(metrics, "开放获取", paper.oa_status || "未知");
+
+    const sources = (paper.sources || [paper.source]).filter(Boolean).map(sourceLabel);
+    node.querySelector(".paper-meta-line").textContent = [
+      paper.venue || "期刊/会议待补",
+      paper.year || "年份待补",
+      sources.join(" · "),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    const links = node.querySelector(".paper-links");
+    addLink(links, "详情", paper.url);
+    addLink(links, "PDF", paper.pdf_url);
+    if (paper.doi) addLink(links, "DOI", `https://doi.org/${paper.doi}`);
+
+    const favoriteButton = node.querySelector(".paper-favorite");
+    favoriteButton.textContent = "取消收藏";
+    favoriteButton.classList.add("active");
+    favoriteButton.addEventListener("click", () => toggleSavePaper(paper));
+
+    els.savedPapers.append(node);
+  }
+}
+
+function addHistoryEntry(action, payload = {}) {
+  const entry = {
+    id: `${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+    action,
+    payload,
+    time: new Date().toISOString(),
+  };
+  state.history.unshift(entry);
+  state.history = state.history.slice(0, 80);
+  persistWorkspaceMemory();
+  renderHistory();
+}
+
+function renderHistory() {
+  els.historyList.innerHTML = "";
+  els.historyEmpty.hidden = state.history.length !== 0;
+  els.historyCount.textContent = `共 ${state.history.length} 条`;
+
+  for (const item of state.history) {
+    const node = document.createElement("article");
+    node.className = "history-item";
+    const summary = historySummary(item.payload);
+    node.innerHTML = `<h4>${escapeHtml(item.action)}</h4><p>${escapeHtml(formatHistoryTime(item.time))} · ${escapeHtml(summary)}</p>`;
+    els.historyList.append(node);
+  }
+}
+
+function historySummary(payload) {
+  const keys = Object.keys(payload || {});
+  if (!keys.length) return "无附加参数";
+  return keys
+    .slice(0, 4)
+    .map((key) => {
+      const value = payload[key];
+      if (Array.isArray(value)) return `${key}: ${value.join("、") || "空"}`;
+      return `${key}: ${value}`;
+    })
+    .join("；");
+}
+
+function formatHistoryTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function paperKey(paper) {

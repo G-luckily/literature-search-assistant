@@ -20,7 +20,7 @@
               <span class="sidebar-icon">⌕</span>
               <span>检索工作区</span>
             </a>
-            <a class="sidebar-link" href="#results-pane" data-nav-target="results-pane" data-nav-group="workspace">
+            <a class="sidebar-link" href="#library-pane" data-nav-target="library-pane" data-nav-group="workspace">
               <span class="sidebar-icon">▣</span>
               <span>文献收藏</span>
             </a>
@@ -28,7 +28,7 @@
               <span class="sidebar-icon">⋈</span>
               <span>检索策略</span>
             </a>
-            <a class="sidebar-link" href="#execution-pane" data-nav-target="execution-pane" data-nav-group="workspace">
+            <a class="sidebar-link" href="#archive-pane" data-nav-target="archive-pane" data-nav-group="workspace">
               <span class="sidebar-icon">↺</span>
               <span>历史归档</span>
             </a>
@@ -53,7 +53,7 @@
           <nav class="topbar-nav" aria-label="Top navigation">
             <a class="topbar-link active" href="#workspace-overview" data-nav-target="workspace-overview" data-nav-group="top">总览</a>
             <a class="topbar-link" href="#project-pane" data-nav-target="project-pane" data-nav-group="top">项目</a>
-            <a class="topbar-link" href="#results-pane" data-nav-target="results-pane" data-nav-group="top">文献池</a>
+            <a class="topbar-link" href="#library-pane" data-nav-target="library-pane" data-nav-group="top">文献池</a>
           </nav>
           <div class="topbar-actions" aria-label="Top bar actions">
             <button type="button" class="topbar-icon" aria-label="通知">🔔</button>
@@ -435,6 +435,7 @@
                 </label>
                 <button id="select-visible" type="button" disabled>选中当前结果</button>
                 <button id="clear-selection" type="button" disabled>清空选择</button>
+                <button id="save-selected" type="button" disabled>收藏已选文献</button>
               </div>
 
               <div id="papers-empty" class="empty-state">
@@ -443,6 +444,47 @@
               </div>
 
               <div id="papers" class="papers"></div>
+            </section>
+
+            <section id="library-pane" class="panel-card results-card">
+              <div class="card-head results-head">
+                <div>
+                  <p class="eyebrow">收藏中心</p>
+                  <h3>文献收藏</h3>
+                  <p id="saved-count" class="selection-count">已收藏 0 篇</p>
+                </div>
+                <span id="saved-updated" class="results-count">暂无更新</span>
+              </div>
+
+              <div class="result-tools">
+                <input id="saved-filter-text" placeholder="筛选收藏文献" />
+                <button id="clear-saved" type="button" disabled>清空收藏</button>
+              </div>
+
+              <div id="saved-empty" class="empty-state">
+                <h3>还没有收藏文献</h3>
+                <p>在候选文献中勾选并点击“收藏已选文献”，这里会保留你的精选池。</p>
+              </div>
+
+              <div id="saved-papers" class="papers"></div>
+            </section>
+
+            <section id="archive-pane" class="panel-card results-card">
+              <div class="card-head results-head">
+                <div>
+                  <p class="eyebrow">流程归档</p>
+                  <h3>历史归档</h3>
+                  <p id="history-count" class="selection-count">共 0 条</p>
+                </div>
+                <span class="results-count">本地归档</span>
+              </div>
+
+              <div id="history-empty" class="empty-state">
+                <h3>暂无历史记录</h3>
+                <p>每次执行检索和导入动作后，会自动记录关键参数与结果摘要。</p>
+              </div>
+
+              <div id="history-list" class="history-list"></div>
             </section>
           </section>
         </main>
@@ -471,6 +513,9 @@
         <div class="paper-footer">
           <div class="paper-meta-line"></div>
           <div class="paper-links"></div>
+          <div class="paper-actions">
+            <button type="button" class="paper-favorite">收藏</button>
+          </div>
         </div>
       </article>
     </template>

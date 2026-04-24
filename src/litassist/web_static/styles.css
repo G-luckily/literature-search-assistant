@@ -1034,6 +1034,52 @@ button:disabled {
   font-weight: 700;
 }
 
+.paper-actions {
+  margin-left: auto;
+}
+
+.paper-favorite {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.paper-favorite.active {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--teal), #2b8b85);
+  color: #fff;
+}
+
+.history-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.history-item {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  padding: 14px 16px;
+}
+
+.history-item h4 {
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.history-item p {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 @media (max-width: 1360px) {
   .dashboard {
     grid-template-columns: 420px minmax(0, 1fr);

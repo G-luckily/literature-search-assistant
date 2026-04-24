@@ -16,19 +16,19 @@
           </div>
 
           <nav class="sidebar-nav" aria-label="Workspace navigation">
-            <a class="sidebar-link active" href="#">
+            <a class="sidebar-link active" href="#workspace-overview" data-nav-target="workspace-overview" data-nav-group="workspace">
               <span class="sidebar-icon">⌕</span>
               <span>检索工作区</span>
             </a>
-            <a class="sidebar-link" href="#">
+            <a class="sidebar-link" href="#results-pane" data-nav-target="results-pane" data-nav-group="workspace">
               <span class="sidebar-icon">▣</span>
               <span>文献收藏</span>
             </a>
-            <a class="sidebar-link" href="#">
+            <a class="sidebar-link" href="#planner-pane" data-nav-target="planner-pane" data-nav-group="workspace">
               <span class="sidebar-icon">⋈</span>
               <span>检索策略</span>
             </a>
-            <a class="sidebar-link" href="#">
+            <a class="sidebar-link" href="#execution-pane" data-nav-target="execution-pane" data-nav-group="workspace">
               <span class="sidebar-icon">↺</span>
               <span>历史归档</span>
             </a>
@@ -51,9 +51,9 @@
         <header class="topbar">
           <div class="topbar-brand">文献智研</div>
           <nav class="topbar-nav" aria-label="Top navigation">
-            <a class="topbar-link active" href="#">总览</a>
-            <a class="topbar-link" href="#">项目</a>
-            <a class="topbar-link" href="#">文献池</a>
+            <a class="topbar-link active" href="#workspace-overview" data-nav-target="workspace-overview" data-nav-group="top">总览</a>
+            <a class="topbar-link" href="#project-pane" data-nav-target="project-pane" data-nav-group="top">项目</a>
+            <a class="topbar-link" href="#results-pane" data-nav-target="results-pane" data-nav-group="top">文献池</a>
           </nav>
           <div class="topbar-actions" aria-label="Top bar actions">
             <button type="button" class="topbar-icon" aria-label="通知">🔔</button>
@@ -62,9 +62,9 @@
           </div>
         </header>
 
-        <main class="dashboard">
+        <main id="workspace-overview" class="dashboard">
           <section class="brief-column">
-            <div class="panel-card brief-card">
+            <div id="project-pane" class="panel-card brief-card">
               <div class="section-intro">
                 <div>
                   <p class="eyebrow">研究简报</p>
@@ -367,7 +367,7 @@
             </div>
 
             <div class="analysis-grid">
-              <section class="panel-card logic-card">
+              <section id="execution-pane" class="panel-card logic-card">
                 <div class="card-head">
                   <div>
                     <p class="eyebrow">执行逻辑</p>
@@ -392,7 +392,7 @@
               </aside>
             </div>
 
-            <section class="panel-card planner-card">
+            <section id="planner-pane" class="panel-card planner-card">
               <div class="card-head">
                 <div>
                   <p class="eyebrow">规划输出</p>
@@ -408,7 +408,7 @@
               <div id="error-output" class="error-output" hidden></div>
             </section>
 
-            <section class="panel-card results-card">
+            <section id="results-pane" class="panel-card results-card">
               <div class="card-head results-head">
                 <div>
                   <p class="eyebrow">文献池</p>

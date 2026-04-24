@@ -78,6 +78,8 @@ const els = {
   plannerMode: document.querySelector("#planner-mode"),
   selectionCount: document.querySelector("#selection-count"),
   resultsCount: document.querySelector("#results-count"),
+  topNavLinks: [...document.querySelectorAll(".topbar-link[data-nav-target]")],
+  sidebarNavLinks: [...document.querySelectorAll(".sidebar-link[data-nav-target]")],
 };
 
 const sourceInputs = [...document.querySelectorAll('input[name="source"]')];
@@ -107,10 +109,50 @@ for (const input of sourceInputs) {
   });
 }
 
+for (const link of [...els.topNavLinks, ...els.sidebarNavLinks]) {
+  link.addEventListener("click", (event) => handleNavigation(event, link));
+}
+
 loadConfig();
 renderExecutionSteps(null);
 updateInsight(null);
 updateDashboard();
+
+function handleNavigation(event, link) {
+  event.preventDefault();
+  const targetId = link.dataset.navTarget;
+  if (!targetId) return;
+
+  activateLink(els.topNavLinks, targetId);
+  activateLink(els.sidebarNavLinks, targetId);
+  scrollToSection(targetId);
+
+  if (targetId === "execution-pane") {
+    if (state.reportPath) {
+      setStatus("已定位到历史与执行记录，可点击“查看完整日志”。");
+    } else {
+      setStatus("暂无历史归档，请先执行一次检索流程。");
+    }
+  }
+}
+
+function activateLink(links, targetId) {
+  if (!links.length) return;
+  for (const link of links) {
+    const isActive = link.dataset.navTarget === targetId;
+    link.classList.toggle("active", isActive);
+    link.setAttribute("aria-current", isActive ? "page" : "false");
+  }
+}
+
+function scrollToSection(targetId) {
+  const section = document.getElementById(targetId);
+  if (!section) {
+    setStatus("目标区域不存在，请刷新页面后重试。");
+    return;
+  }
+  section.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function payloadBase() {
   return {

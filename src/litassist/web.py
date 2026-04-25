@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import shutil
 import socket
 from dataclasses import asdict
 from datetime import datetime
@@ -20,7 +21,7 @@ from .config import (
 )
 from .models import Paper
 from .pipeline import _build_search_plan, run_search
-from .report import write_run
+from .report import write_json, write_run
 from .semantic_scholar_state import get_budget_state
 from .zotero import import_papers
 
@@ -53,6 +54,13 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/config":
             self._json(self._config_payload())
             return
+        if parsed.path == "/api/archive":
+            self._handle_archive_list()
+            return
+        if parsed.path.startswith("/api/archive/"):
+            run_id = parsed.path.removeprefix("/api/archive/")
+            self._handle_archive_detail(run_id)
+            return
         if parsed.path.startswith("/runs/"):
             self._serve_project_file(parsed.path)
             return
@@ -72,6 +80,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 self._handle_update_llm_config(payload)
             elif parsed.path == "/api/config/sources":
                 self._handle_update_source_config(payload)
+            elif parsed.path == "/api/archive/delete":
+                self._handle_archive_delete(payload)
             else:
                 self._json({"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
         except ValueError as exc:
@@ -101,6 +111,7 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         )
         limit = max(1, min(limit, 50))
         from_year = _optional_int(payload, "fromYear")
+        created_at = datetime.now()
         run = run_search(
             need,
             config=self.server.config,
@@ -115,9 +126,29 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             ),
             state_root=self.server.project_root,
         )
-        run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+        run_id = created_at.strftime("%Y%m%d-%H%M%S")
         out_dir = self.server.project_root / "runs" / "web" / run_id
         write_run(run, out_dir)
+        write_json(
+            out_dir / "run_meta.json",
+            {
+                "id": run_id,
+                "createdAt": created_at.isoformat(),
+                "need": need,
+                "sources": sources or list(run.plan.queries.keys()),
+                "limit": limit,
+                "fromYear": from_year,
+                "preferRecent": (
+                    bool(payload["preferRecent"])
+                    if "preferRecent" in payload
+                    else None
+                ),
+                "useLlm": bool(payload.get("useLlm")),
+                "status": "partial" if run.errors else "success",
+                "errors": run.errors,
+                "paperCount": len(run.papers),
+            },
+        )
         self._json(
             {
                 "runId": run_id,
@@ -130,6 +161,37 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 "reportUrl": f"/runs/web/{run_id}/report.md",
             }
         )
+
+    def _handle_archive_list(self) -> None:
+        archive_root = _archive_root(self.server.project_root)
+        items = []
+        if archive_root.exists():
+            for run_dir in sorted(archive_root.iterdir(), reverse=True):
+                if not run_dir.is_dir():
+                    continue
+                summary = _load_archive_summary(run_dir)
+                if summary:
+                    items.append(summary)
+        self._json({"items": items})
+
+    def _handle_archive_detail(self, run_id: str) -> None:
+        run_dir = _resolve_archive_dir(self.server.project_root, run_id)
+        if not run_dir.exists() or not run_dir.is_dir():
+            self._json({"error": "Archive not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        detail = _load_archive_detail(run_dir)
+        if detail is None:
+            self._json({"error": "Archive not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        self._json({"item": detail})
+
+    def _handle_archive_delete(self, payload: dict[str, Any]) -> None:
+        run_id = _required_text(payload, "runId")
+        run_dir = _resolve_archive_dir(self.server.project_root, run_id)
+        if not run_dir.exists() or not run_dir.is_dir():
+            raise ValueError("archive run not found")
+        shutil.rmtree(run_dir)
+        self._json({"ok": True, "runId": run_id})
 
     def _handle_import_zotero(self, payload: dict[str, Any]) -> None:
         papers_payload = payload.get("papers")
@@ -443,6 +505,129 @@ def _serialize_source_meta(source_meta: dict[str, dict[str, Any]]) -> dict[str, 
             "warningMessage": meta.get("warning_message") or "",
         }
     return serialized
+
+
+def _archive_root(project_root: Path) -> Path:
+    return (project_root / "runs" / "web").resolve()
+
+
+def _resolve_archive_dir(project_root: Path, run_id: str) -> Path:
+    archive_root = _archive_root(project_root)
+    target = (archive_root / run_id).resolve()
+    if archive_root not in target.parents:
+        raise ValueError("invalid archive path")
+    return target
+
+
+def _load_archive_summary(run_dir: Path) -> dict[str, Any] | None:
+    plan = _read_json_file(run_dir / "search_plan.json")
+    if not isinstance(plan, dict):
+        return None
+    meta = _read_json_file(run_dir / "run_meta.json")
+    papers = _read_json_file(run_dir / "papers.json")
+    paper_count = len(papers) if isinstance(papers, list) else int(meta.get("paperCount") or 0) if isinstance(meta, dict) else 0
+    return {
+        "id": run_dir.name,
+        "title": _archive_title(plan.get("need")),
+        "need": plan.get("need") or "未命名任务",
+        "createdAt": _archive_created_at(run_dir, meta),
+        "zhKeywords": _list_text_field(plan.get("zh_keywords")),
+        "enKeywords": _list_text_field(plan.get("en_keywords")),
+        "sources": _archive_sources(plan, meta),
+        "paperCount": paper_count,
+        "status": _archive_status(meta, paper_count),
+        "planner": plan.get("planner") or "rules",
+        "fromYear": meta.get("fromYear") if isinstance(meta, dict) else None,
+        "limit": meta.get("limit") if isinstance(meta, dict) else None,
+        "preferRecent": meta.get("preferRecent") if isinstance(meta, dict) else None,
+        "useLlm": (
+            meta.get("useLlm")
+            if isinstance(meta, dict) and "useLlm" in meta
+            else plan.get("planner") == "llm"
+        ),
+        "reportUrl": f"/runs/web/{run_dir.name}/report.md",
+    }
+
+
+def _load_archive_detail(run_dir: Path) -> dict[str, Any] | None:
+    summary = _load_archive_summary(run_dir)
+    if summary is None:
+        return None
+    plan = _read_json_file(run_dir / "search_plan.json")
+    meta = _read_json_file(run_dir / "run_meta.json")
+    papers = _read_json_file(run_dir / "papers.json")
+    source_meta = _read_json_file(run_dir / "source_meta.json")
+    if not isinstance(plan, dict):
+        return None
+    summary.update(
+        {
+            "plan": plan,
+            "papers": papers if isinstance(papers, list) else [],
+            "sourceMeta": (
+                _serialize_source_meta(source_meta)
+                if isinstance(source_meta, dict)
+                else {}
+            ),
+            "errors": meta.get("errors", {}) if isinstance(meta, dict) else {},
+        }
+    )
+    return summary
+
+
+def _read_json_file(path: Path) -> Any:
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _archive_title(need: Any) -> str:
+    if not isinstance(need, str) or not need.strip():
+        return "未命名任务"
+    compact = " ".join(need.split())
+    return compact[:36] + ("..." if len(compact) > 36 else "")
+
+
+def _archive_created_at(run_dir: Path, meta: Any) -> str:
+    if isinstance(meta, dict) and isinstance(meta.get("createdAt"), str):
+        return meta["createdAt"]
+    try:
+        parsed = datetime.strptime(run_dir.name, "%Y%m%d-%H%M%S")
+        return parsed.isoformat()
+    except ValueError:
+        return datetime.fromtimestamp(run_dir.stat().st_mtime).isoformat()
+
+
+def _archive_sources(plan: dict[str, Any], meta: Any) -> list[str]:
+    if isinstance(meta, dict) and isinstance(meta.get("sources"), list):
+        return _list_text_field(meta.get("sources"))
+    queries = plan.get("queries")
+    if isinstance(queries, dict):
+        return [str(key) for key in queries.keys()]
+    return []
+
+
+def _archive_status(meta: Any, paper_count: int) -> str:
+    status_map = {
+        "success": "成功",
+        "partial": "部分完成",
+        "failed": "失败",
+        "running": "进行中",
+        "interrupted": "中断",
+    }
+    if isinstance(meta, dict):
+        raw = str(meta.get("status") or "").strip().lower()
+        if raw in status_map:
+            return status_map[raw]
+    return "已归档" if paper_count else "暂无结果"
+
+
+def _list_text_field(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
 
 
 def _validate_semantic_budget_updates(

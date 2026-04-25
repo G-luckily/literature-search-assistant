@@ -5,20 +5,52 @@ const state = {
   selectedKeys: new Set(),
   savedPapers: [],
   history: [],
+  archiveItems: [],
+  archiveDetail: null,
+  archiveSelectedId: "",
   reportPath: "",
   config: null,
   sourceMeta: {},
+  activePage: "search",
   workflowLabel: "待命",
   workflowDetail: "等待执行检索。",
+  outputView: "ask",
+  workspaceSnapshot: null,
+  workspaceRestored: false,
+  theme: document.documentElement.dataset.theme || "dark",
+  intentSidebarCollapsed: false,
+  selectedMockTaskId: "",
 };
 
+const THEME_STORAGE_KEY = "litassist.theme.v1";
+const SAVED_PAPERS_STORAGE_KEY = "litassist.savedPapers.v1";
+const HISTORY_STORAGE_KEY = "litassist.history.v1";
+const WORKSPACE_SNAPSHOT_STORAGE_KEY = "litassist.workspaceSnapshot.v1";
+
+const MOCK_HISTORY = [
+  { id: "ai-zotero", title: "AI 辅助文献检索与 Zotero 协同管理", prompt: "我想研究 AI 辅助文献检索与 Zotero 协同管理，重点关注近五年的工具实践、知识组织和研究工作流。" },
+  { id: "youth-ai", title: "青年群体与人工智能使用经验", prompt: "我想研究青年群体与人工智能使用经验，关注教育、就业和社会参与。" },
+  { id: "emotion-capital", title: "公考青年的情感资本困境", prompt: "我想研究公考青年的情感资本困境，需要做文献检索回顾。" },
+  { id: "social-policy-ai", title: "人工智能与社会政策治理", prompt: "研究人工智能与社会政策治理的最新文献，包括风险治理、公共服务和算法责任。" },
+  { id: "knowledge-workflow", title: "知识管理工具与研究工作流", prompt: "我想比较 Zotero、Notion 与 AI 工具在学术研究工作流中的协同方式。" },
+  { id: "lit-review-method", title: "系统综述方法与智能检索策略", prompt: "我想研究系统综述方法与智能检索策略，重点关注检索式生成和证据筛选。" },
+];
+
 const els = {
+  workspaceOverview: document.querySelector("#workspace-overview"),
+  pageViews: [...document.querySelectorAll(".page-view")],
+  themeToggle: document.querySelector("#theme-toggle"),
+  intentSidebar: document.querySelector("#intent-sidebar"),
+  intentSidebarToggle: document.querySelector("#intent-sidebar-toggle"),
+  newResearchButton: document.querySelector("#new-research-button"),
+  intentHistoryList: document.querySelector("#intent-history-list"),
   need: document.querySelector("#need"),
   zhKeywords: document.querySelector("#zh-keywords"),
   enKeywords: document.querySelector("#en-keywords"),
   limit: document.querySelector("#limit"),
   fromYear: document.querySelector("#from-year"),
   preferRecent: document.querySelector("#prefer-recent"),
+  searchSettingsSummary: document.querySelector("#search-settings-summary"),
   status: document.querySelector("#status"),
   planButton: document.querySelector("#plan-button"),
   searchButton: document.querySelector("#search-button"),
@@ -30,40 +62,26 @@ const els = {
   llmModel: document.querySelector("#llm-model"),
   llmEndpoint: document.querySelector("#llm-endpoint"),
   llmApiKey: document.querySelector("#llm-api-key"),
-  llmTimeout: document.querySelector("#llm-timeout"),
   llmClearKey: document.querySelector("#llm-clear-key"),
+  llmTimeout: document.querySelector("#llm-timeout"),
   saveLlmConfig: document.querySelector("#save-llm-config"),
   llmConfigStatus: document.querySelector("#llm-config-status"),
   sourceStatus: document.querySelector("#source-status"),
+  sourceConfigSummary: document.querySelector("#source-config-summary"),
+  modelConfigSummary: document.querySelector("#model-config-summary"),
   semanticScholarApiKey: document.querySelector("#semantic-scholar-api-key"),
-  semanticScholarMonthlySearchBudget: document.querySelector(
-    "#semantic-scholar-monthly-search-budget",
-  ),
-  semanticScholarWarningRemaining: document.querySelector(
-    "#semantic-scholar-warning-remaining",
-  ),
-  semanticScholarCacheOnlyRemaining: document.querySelector(
-    "#semantic-scholar-cache-only-remaining",
-  ),
-  semanticScholarCacheTtlDays: document.querySelector(
-    "#semantic-scholar-cache-ttl-days",
-  ),
-  clearSemanticScholarApiKey: document.querySelector("#clear-semantic-scholar-api-key"),
   googleScholarApiKey: document.querySelector("#google-scholar-api-key"),
-  googleScholarEndpoint: document.querySelector("#google-scholar-endpoint"),
-  clearGoogleScholarApiKey: document.querySelector("#clear-google-scholar-api-key"),
   webOfScienceApiKey: document.querySelector("#web-of-science-api-key"),
-  webOfScienceEndpoint: document.querySelector("#web-of-science-endpoint"),
-  clearWebOfScienceApiKey: document.querySelector("#clear-web-of-science-api-key"),
   saveSourceConfig: document.querySelector("#save-source-config"),
   sourceConfigStatus: document.querySelector("#source-config-status"),
   filterText: document.querySelector("#filter-text"),
-  pdfOnly: document.querySelector("#pdf-only"),
   sortBy: document.querySelector("#sort-by"),
+  pdfOnly: null,
   selectVisible: document.querySelector("#select-visible"),
   clearSelection: document.querySelector("#clear-selection"),
   saveSelected: document.querySelector("#save-selected"),
   savedFilterText: document.querySelector("#saved-filter-text"),
+  savedAuthorFilter: document.querySelector("#saved-author-filter"),
   clearSaved: document.querySelector("#clear-saved"),
   keywordOutput: document.querySelector("#keyword-output"),
   planDetailOutput: document.querySelector("#plan-detail-output"),
@@ -73,29 +91,40 @@ const els = {
   savedPapers: document.querySelector("#saved-papers"),
   savedEmpty: document.querySelector("#saved-empty"),
   savedCount: document.querySelector("#saved-count"),
-  savedUpdated: document.querySelector("#saved-updated"),
+  savedImportedCount: document.querySelector("#saved-imported-count"),
+  savedPendingCount: document.querySelector("#saved-pending-count"),
+  savedYearFilter: document.querySelector("#saved-year-filter"),
+  savedSourceFilter: document.querySelector("#saved-source-filter"),
+  savedTagFilter: document.querySelector("#saved-tag-filter"),
+  savedImportedFilter: document.querySelector("#saved-imported-filter"),
+  historyFilterText: document.querySelector("#history-filter-text"),
+  clearHistory: document.querySelector("#clear-history"),
   historyList: document.querySelector("#history-list"),
   historyEmpty: document.querySelector("#history-empty"),
   historyCount: document.querySelector("#history-count"),
-  reportLink: document.querySelector("#report-link"),
+  archiveDetail: document.querySelector("#archive-detail"),
   paperTemplate: document.querySelector("#paper-template"),
   selectedSourceCount: document.querySelector("#selected-source-count"),
-  statSourceCount: document.querySelector("#stat-source-count"),
-  statPaperCount: document.querySelector("#stat-paper-count"),
-  statWorkflowLabel: document.querySelector("#stat-workflow-label"),
-  statWorkflowDetail: document.querySelector("#stat-workflow-detail"),
-  workflowPill: document.querySelector("#workflow-pill"),
-  executionSteps: document.querySelector("#execution-steps"),
-  insightText: document.querySelector("#insight-text"),
-  plannerMode: document.querySelector("#planner-mode"),
+  reportLink: document.querySelector("#report-link"),
   selectionCount: document.querySelector("#selection-count"),
   resultsCount: document.querySelector("#results-count"),
-  topNavLinks: [...document.querySelectorAll(".topbar-link[data-nav-target]")],
-  sidebarNavLinks: [...document.querySelectorAll(".sidebar-link[data-nav-target]")],
+  outputTabs: document.querySelector("#output-tabs"),
+  outputTabPlan: document.querySelector("#output-tab-plan"),
+  outputTabSearch: document.querySelector("#output-tab-search"),
+  flowPaneAsk: document.querySelector("#flow-pane-ask"),
+  flowPanePlan: document.querySelector("#flow-pane-plan"),
+  flowPaneSearch: document.querySelector("#flow-pane-search"),
+  flowPlanAction: document.querySelector("#flow-plan-action"),
+  flowSearchAction: document.querySelector("#flow-search-action"),
+  topNavLinks: [...document.querySelectorAll(".topbar-link[data-page]")],
+  sidebarNavLinks: [...document.querySelectorAll(".sidebar-link[data-page]")],
 };
 
 const sourceInputs = [...document.querySelectorAll('input[name="source"]')];
 
+els.themeToggle.addEventListener("click", () => toggleTheme());
+els.intentSidebarToggle.addEventListener("click", () => toggleIntentSidebar());
+els.newResearchButton.addEventListener("click", () => startNewResearch());
 els.planButton.addEventListener("click", () => runPlan());
 els.searchButton.addEventListener("click", () => runSearch());
 els.dryRunButton.addEventListener("click", () => importZotero());
@@ -106,21 +135,38 @@ els.llmProvider.addEventListener("change", () => {
   updateDashboard();
 });
 els.llmEnabled.addEventListener("change", () => updateDashboard());
-els.useLlm.addEventListener("change", () => updateDashboard());
+els.need.addEventListener("input", () => persistWorkspaceSnapshot());
+els.need.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    runSearch();
+  }
+});
+
+els.applyImport.addEventListener("change", () => persistWorkspaceSnapshot());
 els.filterText.addEventListener("input", () => applyResultControls());
-els.pdfOnly.addEventListener("change", () => applyResultControls());
 els.sortBy.addEventListener("change", () => applyResultControls());
 els.selectVisible.addEventListener("click", () => selectVisiblePapers());
 els.clearSelection.addEventListener("click", () => clearSelection());
 els.saveSelected.addEventListener("click", () => saveSelectedPapers());
 els.savedFilterText.addEventListener("input", () => renderSavedPapers());
+els.savedAuthorFilter.addEventListener("input", () => renderSavedPapers());
+els.savedYearFilter.addEventListener("input", () => renderSavedPapers());
+els.savedSourceFilter.addEventListener("input", () => renderSavedPapers());
+els.savedTagFilter.addEventListener("input", () => renderSavedPapers());
+els.savedImportedFilter.addEventListener("change", () => renderSavedPapers());
 els.clearSaved.addEventListener("click", () => clearSavedPapers());
+els.historyFilterText.addEventListener("input", () => renderHistory());
+els.clearHistory.addEventListener("click", () => loadArchive(true));
+els.outputTabPlan.addEventListener("click", () => setFlowStep("plan"));
+els.outputTabSearch.addEventListener("click", () => setFlowStep("search"));
+els.flowPlanAction.addEventListener("click", () => runPlan());
+els.flowSearchAction.addEventListener("click", () => runSearch());
 for (const input of sourceInputs) {
   input.addEventListener("change", () => {
     renderSourceBadges();
-    renderExecutionSteps(state.plan);
-    updateInsight(state.plan);
     updateDashboard();
+    persistWorkspaceSnapshot();
   });
 }
 
@@ -128,48 +174,226 @@ for (const link of [...els.topNavLinks, ...els.sidebarNavLinks]) {
   link.addEventListener("click", (event) => handleNavigation(event, link));
 }
 
+initializeTheme();
 loadWorkspaceMemory();
+setActivePage(resolveInitialPage(), false);
 loadConfig();
-renderExecutionSteps(null);
-updateInsight(null);
+loadArchive();
 updateDashboard();
 renderSavedPapers();
 renderHistory();
+renderMockHistory();
+updateSearchSettingsSummary();
+setFlowStep("ask");
+
+window.addEventListener("hashchange", () => setActivePage(resolveInitialPage(), false));
+
+function initializeTheme() {
+  const forcedTheme = new URLSearchParams(location.search).get("theme");
+  if (forcedTheme === "light" || forcedTheme === "dark") {
+    applyTheme(forcedTheme, false);
+    return;
+  }
+  try {
+    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    if (storedTheme === "light" || storedTheme === "dark") {
+      applyTheme(storedTheme, false);
+      return;
+    }
+  } catch {}
+  applyTheme(resolveSystemTheme(), false);
+}
+
+function toggleTheme() {
+  applyTheme(state.theme === "light" ? "dark" : "light");
+}
+
+function toggleIntentSidebar() {
+  state.intentSidebarCollapsed = !state.intentSidebarCollapsed;
+  document.body.dataset.sidebar = state.intentSidebarCollapsed ? "collapsed" : "expanded";
+  els.intentSidebarToggle.setAttribute(
+    "aria-expanded",
+    state.intentSidebarCollapsed ? "false" : "true",
+  );
+}
+
+function renderMockHistory() {
+  els.intentHistoryList.innerHTML = "";
+  for (const task of MOCK_HISTORY) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `intent-history-item ${task.id === state.selectedMockTaskId ? "active" : ""}`;
+    button.textContent = task.title;
+    button.title = task.title;
+    button.addEventListener("click", () => {
+      state.selectedMockTaskId = task.id;
+      window.onSelectTask(task.id);
+      renderMockHistory();
+    });
+    els.intentHistoryList.append(button);
+  }
+}
+
+window.onSelectTask = function onSelectTask(taskId) {
+  const task = MOCK_HISTORY.find((item) => item.id === taskId);
+  if (!task) return;
+  els.need.value = task.prompt;
+  state.selectedMockTaskId = taskId;
+  setActivePage("search");
+  setStatus("已载入历史检索意图。");
+  persistWorkspaceSnapshot();
+};
+
+function startNewResearch() {
+  els.need.value = "";
+  els.zhKeywords.value = "";
+  els.enKeywords.value = "";
+  els.fromYear.value = "";
+  els.limit.value = "8";
+  els.preferRecent.checked = true;
+  els.useLlm.checked = false;
+  state.selectedMockTaskId = "";
+  state.plan = null;
+  state.papers = [];
+  state.visiblePapers = [];
+  state.sourceMeta = {};
+  state.reportPath = "";
+  state.selectedKeys = new Set();
+  clearErrors();
+  els.keywordOutput.innerHTML = "";
+  els.planDetailOutput.innerHTML = "";
+  updateReportLink("");
+  applyResultControls();
+  setFlowStep("ask");
+  setStatus("已新建文献课题。");
+  renderMockHistory();
+  persistWorkspaceSnapshot();
+  setActivePage("search");
+}
+
+function applyTheme(theme, persist = true) {
+  const normalized = theme === "light" ? "light" : "dark";
+  state.theme = normalized;
+  document.documentElement.dataset.theme = normalized;
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, normalized);
+    } catch {}
+  }
+  const nextMode = normalized === "dark" ? "日间模式" : "夜间模式";
+  const buttonLabel = normalized === "dark" ? "日间" : "夜间";
+  els.themeToggle.textContent = buttonLabel;
+  els.themeToggle.setAttribute("aria-label", `切换到${nextMode}`);
+  els.themeToggle.setAttribute("title", `切换到${nextMode}`);
+}
+
+function resolveSystemTheme() {
+  try {
+    return window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: light)").matches
+      ? "light"
+      : "dark";
+  } catch {
+    return "dark";
+  }
+}
 
 function handleNavigation(event, link) {
   event.preventDefault();
-  const targetId = link.dataset.navTarget;
-  if (!targetId) return;
+  const page = link.dataset.page;
+  if (!page) return;
+  setActivePage(page);
+}
 
-  activateLink(els.topNavLinks, targetId);
-  activateLink(els.sidebarNavLinks, targetId);
-  scrollToSection(targetId);
+function resolveInitialPage() {
+  const hash = location.hash.replace(/^#/, "");
+  if (["search", "collection", "archive", "settings"].includes(hash)) return hash;
+  return "search";
+}
 
-  if (targetId === "execution-pane") {
-    if (state.reportPath) {
-      setStatus("已定位到历史与执行记录，可点击“查看完整日志”。");
-    } else {
-      setStatus("暂无历史归档，请先执行一次检索流程。");
-    }
+function setActivePage(page, updateHash = true) {
+  const normalized = ["search", "collection", "archive", "settings"].includes(page)
+    ? page
+    : "search";
+
+  state.activePage = normalized;
+  document.body.dataset.page = normalized;
+
+  for (const view of els.pageViews) {
+    const isActive = view.id === `${normalized}-page`;
+    view.classList.toggle("active", isActive);
+    view.hidden = !isActive;
   }
+
+  activateLink(els.topNavLinks, normalized);
+  activateLink(els.sidebarNavLinks, normalized);
+
+  if (normalized === "search") {
+    setFlowStep(state.papers.length ? "search" : state.plan ? "plan" : "ask");
+  }
+
+  if (updateHash) {
+    history.replaceState(null, "", `#${normalized}`);
+  }
+}
+
+function setFlowStep(step) {
+  const hasPlan = Boolean(state.plan);
+  const hasResults = state.papers.length > 0;
+  let normalized = step;
+  if (normalized === "search" && !hasResults) normalized = hasPlan ? "plan" : "ask";
+  if (normalized === "plan" && !hasPlan) normalized = hasResults ? "search" : "ask";
+  if (!["ask", "plan", "search"].includes(normalized)) normalized = "ask";
+
+  if (els.outputTabs) {
+    els.outputTabs.hidden = !(hasPlan || hasResults);
+  }
+  if (els.outputTabPlan) {
+    const active = normalized === "plan";
+    els.outputTabPlan.classList.toggle("active", active);
+    els.outputTabPlan.setAttribute("aria-selected", active ? "true" : "false");
+    els.outputTabPlan.disabled = !hasPlan;
+  }
+  if (els.outputTabSearch) {
+    const active = normalized === "search";
+    els.outputTabSearch.classList.toggle("active", active);
+    els.outputTabSearch.setAttribute("aria-selected", active ? "true" : "false");
+    els.outputTabSearch.disabled = !hasResults;
+  }
+
+  els.flowPaneAsk.hidden = normalized !== "ask";
+  els.flowPanePlan.hidden = normalized !== "plan";
+  els.flowPaneSearch.hidden = normalized !== "search";
+  state.outputView = normalized;
+  document.body.dataset.output = normalized;
+  if (state.workspaceRestored) {
+    persistWorkspaceSnapshot();
+  }
+}
+
+function updateSearchSettingsSummary() {
+  if (!els.searchSettingsSummary) return;
+  const zhCount = splitKeywords(els.zhKeywords.value).length;
+  const enCount = splitKeywords(els.enKeywords.value).length;
+  const keywordCount = zhCount + enCount;
+  const fromYear = els.fromYear.value.trim();
+  const limit = els.limit.value.trim() || "8";
+  const parts = [
+    keywordCount ? `${keywordCount} 组关键词` : "关键词待补充",
+    fromYear ? `${fromYear} 起` : "年份待设置",
+    `每源 ${limit} 条`,
+  ];
+  if (els.useLlm.checked) parts.push("AI 优化已启用");
+  els.searchSettingsSummary.textContent = parts.join(" / ");
 }
 
 function activateLink(links, targetId) {
   if (!links.length) return;
   for (const link of links) {
-    const isActive = link.dataset.navTarget === targetId;
+    const isActive = link.dataset.page === targetId;
     link.classList.toggle("active", isActive);
     link.setAttribute("aria-current", isActive ? "page" : "false");
   }
-}
-
-function scrollToSection(targetId) {
-  const section = document.getElementById(targetId);
-  if (!section) {
-    setStatus("目标区域不存在，请刷新页面后重试。");
-    return;
-  }
-  section.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function payloadBase() {
@@ -195,11 +419,14 @@ function selectedSources() {
 async function runPlan() {
   clearErrors();
   setWorkflowStatus("规划中", "正在生成关键词矩阵与检索式。");
+  setFlowStep("plan");
   setBusy(true, "正在生成检索计划。");
   try {
     const data = await postJson("/api/plan", payloadBase());
     state.plan = data.plan;
     renderPlan(data.plan);
+    setFlowStep("plan");
+    persistWorkspaceSnapshot();
     setStatus("检索计划已生成。");
     setWorkflowStatus("方案就绪", "研究问题已经拆解为可执行检索步骤。");
     addHistoryEntry("生成检索方案", {
@@ -224,6 +451,7 @@ async function runSearch() {
   };
   clearErrors();
   setWorkflowStatus("检索中", "正在调用已选数据库并整理候选结果。");
+  setFlowStep("search");
   setBusy(true, "正在检索，开放 API 可能需要几十秒。");
   try {
     const data = await postJson("/api/search", payload);
@@ -237,6 +465,9 @@ async function runSearch() {
     renderSourceSummary(data.errors || {}, state.sourceMeta);
     updateReportLink(data.reportUrl);
     applyResultControls();
+    setFlowStep("search");
+    persistWorkspaceSnapshot();
+    await loadArchive();
     const semanticNote = semanticStatusNote(state.sourceMeta.semantic_scholar);
     setStatus(
       `检索完成：${state.papers.length} 篇候选文献${payload.fromYear ? `，${payload.fromYear} 年以来` : ""}。${semanticNote ? ` ${semanticNote}` : ""}`,
@@ -293,7 +524,17 @@ async function importZotero() {
       created: result.created || 0,
       skipped: result.skipped || 0,
       errors: (result.errors || []).length,
+      applied: apply,
     });
+    if (apply) {
+      for (const paper of selectedPapers) {
+        paper.imported = true;
+        paper.zoteroImported = true;
+      }
+      persistWorkspaceMemory();
+      renderPapers(state.visiblePapers);
+      renderSavedPapers();
+    }
   } catch (error) {
     showError(error.message);
   } finally {
@@ -310,11 +551,13 @@ async function loadConfig() {
     }
     state.config = data;
     renderConfig(data);
+    restoreWorkspaceSnapshot();
   } catch (error) {
     setConfigStatus(`配置读取失败：${error.message}`);
     setSourceConfigStatus(`配置读取失败：${error.message}`);
     renderSourceBadges();
     updateDashboard();
+    restoreWorkspaceSnapshot();
   }
 }
 
@@ -335,30 +578,15 @@ function renderConfig(config) {
   setConfigStatus(
     `${providerLabel(els.llmProvider.value)} · ${llm.hasApiKey ? "接口密钥已配置" : "接口密钥未配置"}`,
   );
+  updateSearchSettingsSummary();
   updateDashboard();
 }
 
 function renderSourceConfig(config) {
   const sources = config.sources || {};
   els.semanticScholarApiKey.value = "";
-  els.semanticScholarMonthlySearchBudget.value =
-    sources.semantic_scholar?.monthlySearchBudget || 250;
-  els.semanticScholarWarningRemaining.value =
-    sources.semantic_scholar?.warningRemaining || 50;
-  els.semanticScholarCacheOnlyRemaining.value =
-    sources.semantic_scholar?.cacheOnlyRemaining || 25;
-  els.semanticScholarCacheTtlDays.value =
-    sources.semantic_scholar?.cacheTtlDays || 30;
-  els.clearSemanticScholarApiKey.checked = false;
   els.googleScholarApiKey.value = "";
-  els.googleScholarEndpoint.value =
-    sources.google_scholar?.endpoint || "https://serpapi.com/search.json";
-  els.clearGoogleScholarApiKey.checked = false;
   els.webOfScienceApiKey.value = "";
-  els.webOfScienceEndpoint.value =
-    sources.web_of_science?.endpoint ||
-    "https://api.clarivate.com/apis/wos-starter/v1/documents";
-  els.clearWebOfScienceApiKey.checked = false;
   renderSourceBadges();
   setSourceConfigStatus(sourceConfigText());
 }
@@ -398,30 +626,13 @@ async function saveSourceConfig() {
       fromYear: els.fromYear.value ? Number(els.fromYear.value) : null,
       preferRecent: els.preferRecent.checked,
       semanticScholarApiKey: els.semanticScholarApiKey.value.trim(),
-      semanticScholarMonthlySearchBudget: Number(
-        els.semanticScholarMonthlySearchBudget.value || 250,
-      ),
-      semanticScholarWarningRemaining: Number(
-        els.semanticScholarWarningRemaining.value || 50,
-      ),
-      semanticScholarCacheOnlyRemaining: Number(
-        els.semanticScholarCacheOnlyRemaining.value || 25,
-      ),
-      semanticScholarCacheTtlDays: Number(
-        els.semanticScholarCacheTtlDays.value || 30,
-      ),
-      clearSemanticScholarApiKey: els.clearSemanticScholarApiKey.checked,
       googleScholarApiKey: els.googleScholarApiKey.value.trim(),
-      googleScholarEndpoint: els.googleScholarEndpoint.value.trim(),
-      clearGoogleScholarApiKey: els.clearGoogleScholarApiKey.checked,
       webOfScienceApiKey: els.webOfScienceApiKey.value.trim(),
-      webOfScienceEndpoint: els.webOfScienceEndpoint.value.trim(),
-      clearWebOfScienceApiKey: els.clearWebOfScienceApiKey.checked,
     });
     state.config = data;
     renderConfig(data);
-    setStatus("数据源配置已保存。");
-    setWorkflowStatus("已配置", "数据源策略与 Key 配置已更新。");
+    setStatus("常用接口配置已保存。");
+    setWorkflowStatus("已配置", "数据源 API Key 已更新。");
   } catch (error) {
     setSourceConfigStatus(`保存失败：${error.message}`);
     showError(error.message);
@@ -523,11 +734,9 @@ async function postJson(url, payload) {
 
 function renderPlan(plan) {
   if (!plan) return;
-  renderExecutionSteps(plan);
   renderKeywordOutput(plan);
   renderPlanDetails(plan);
   updatePlannerMode(plan);
-  updateInsight(plan);
 }
 
 function renderKeywordOutput(plan) {
@@ -647,90 +856,14 @@ function conceptList(concepts) {
   return box;
 }
 
-function renderExecutionSteps(plan) {
-  els.executionSteps.innerHTML = "";
-  const steps = buildExecutionSteps(plan);
-  for (const step of steps) {
-    const item = document.createElement("article");
-    item.className = `step-item ${step.highlight ? "highlight" : ""}`;
-    item.innerHTML = `<div class="step-index">${escapeHtml(step.label)}</div><div class="step-content">${escapeHtml(step.text)}</div>`;
-    els.executionSteps.append(item);
-  }
-}
-
-function buildExecutionSteps(plan) {
-  const selected = selectedSources();
-  const labels = selected.length ? selected.map(sourceLabel).join("、") : "已选数据源";
-  const steps = [];
-
-  steps.push({
-    label: "步骤 01",
-    text: plan
-      ? plan.planner === "llm"
-        ? "使用已配置的大模型规划器，把研究问题拆解为可执行的概念块与检索关键词。"
-        : "使用规则规划器，把研究问题拆解为可执行的概念块与检索关键词。"
-      : "等待输入研究问题，以生成可执行的概念块和关键词族。",
-  });
-
-  steps.push({
-    label: "步骤 02",
-    text: plan?.queries && Object.keys(plan.queries).length
-      ? `已为 ${Object.keys(plan.queries).length} 个数据库生成检索式：${Object.keys(plan.queries).map(sourceLabel).join("、")}。`
-      : `执行检索后，将对 ${labels} 发起查询。`,
-  });
-
-  if (plan?.search_strategy?.length) {
-    steps.push({
-      label: "步骤 03",
-      text: plan.search_strategy[0],
-    });
-  } else {
-    steps.push({
-      label: "步骤 03",
-      text: "跨来源结果会进行去重，并按新近性、相关性或引用信号排序。",
-    });
-  }
-
-  if (state.papers.length) {
-    steps.push({
-      label: `步骤 ${String(steps.length + 1).padStart(2, "0")}`,
-      text: `已在 ${selected.length || 1} 个启用数据源上完成去重与排序，共得到 ${state.papers.length} 篇候选文献。`,
-      highlight: true,
-    });
-  } else {
-    steps[steps.length - 1].highlight = true;
-  }
-
-  return steps.slice(0, 4);
-}
-
-function updateInsight(plan) {
-  const selected = selectedSources().map(sourceLabel);
-  if (state.papers.length && plan?.core_concepts?.length) {
-    const first = primaryConceptLabel(plan.core_concepts[0]);
-    els.insightText.textContent = `当前结果已围绕“${first}”形成主轴，建议优先复核高相关候选文献，再决定是否扩展到更宽泛的邻近概念。`;
-    return;
-  }
-  if (plan?.core_concepts?.length) {
-    const first = primaryConceptLabel(plan.core_concepts[0]);
-    const second = plan.core_concepts[1] ? primaryConceptLabel(plan.core_concepts[1]) : "";
-    els.insightText.textContent = second
-      ? `建议把“${first}”作为主概念，把“${second}”作为限制条件，用于缩小检索空间并提升命中质量。`
-      : `建议把“${first}”作为首要概念轴，再按方法、场景或时间范围继续细化检索式。`;
-    return;
-  }
-  if (selected.length) {
-    els.insightText.textContent = `当前已准备对 ${selected.join("、")} 建立检索通路。输入研究问题后，系统会生成关键词矩阵和查询逻辑。`;
-    return;
-  }
-  els.insightText.textContent = "先定义研究问题，系统会把核心概念、检索式和候选文献分析同步铺开。";
-}
+// Removed legacy execution steps and insight functions to reduce code density and complexity as they are not needed for the new multi-page structure.
 
 function primaryConceptLabel(concept) {
   return concept.label_zh || concept.label_en || "核心概念";
 }
 
 function updatePlannerMode(plan) {
+  if (!els.plannerMode) return;
   if (!plan) {
     els.plannerMode.textContent = "等待生成方案";
     return;
@@ -833,20 +966,20 @@ function renderPapers(papers) {
       updateSelectionUi();
     });
 
-    node.querySelector(".paper-rank-badge").textContent = index === 0 ? "最佳匹配" : "候选";
-    node.querySelector(".paper-domain").textContent = paperDomainLabel(paper);
+    node.querySelector(".paper-rank-badge").textContent = index === 0 ? "最佳" : "候选";
+    node.querySelector(".paper-source-label").textContent = paperDomainLabel(paper);
     node.querySelector(".paper-title").textContent = paper.title || "未命名文献";
     node.querySelector(".paper-authors").textContent =
       (paper.authors || []).slice(0, 8).join(", ") || "作者信息待补";
-    node.querySelector(".paper-abstract").textContent = trimText(
+    node.querySelector(".paper-summary").textContent = trimText(
       paper.abstract || "暂无摘要。",
       420,
     );
 
-    const metrics = node.querySelector(".paper-metrics");
+    const metrics = node.querySelector(".paper-metrics-bar");
     addPaperMetric(metrics, "年份", paper.year || "暂无");
     addPaperMetric(metrics, "引用", paper.cited_by_count ?? "暂无");
-    addPaperMetric(metrics, "开放获取", paper.oa_status || "未知");
+    addPaperMetric(metrics, "OA", paper.oa_status || "未知");
     addPaperMetric(
       metrics,
       "得分",
@@ -854,20 +987,20 @@ function renderPapers(papers) {
     );
 
     const sources = (paper.sources || [paper.source]).filter(Boolean).map(sourceLabel);
-    node.querySelector(".paper-meta-line").textContent = [
+    node.querySelector(".paper-meta-info").textContent = [
       paper.venue || "期刊/会议待补",
-      paper.year || "年份待补",
+      paper.year || "年份",
       sources.join(" · "),
     ]
       .filter(Boolean)
       .join(" · ");
 
-    const links = node.querySelector(".paper-links");
+    const links = node.querySelector(".paper-link-group");
     addLink(links, "详情", paper.url);
     addLink(links, "PDF", paper.pdf_url);
     if (paper.doi) addLink(links, "DOI", `https://doi.org/${paper.doi}`);
 
-    const favoriteButton = node.querySelector(".paper-favorite");
+    const favoriteButton = node.querySelector(".paper-favorite-btn");
     const saved = isSavedPaper(paper);
     favoriteButton.textContent = saved ? "已收藏" : "收藏";
     favoriteButton.classList.toggle("active", saved);
@@ -894,7 +1027,7 @@ function addPaperMetric(parent, label, value) {
 
 function applyResultControls() {
   const text = els.filterText.value.trim().toLowerCase();
-  const pdfOnly = els.pdfOnly.checked;
+  const pdfOnly = Boolean(els.pdfOnly?.checked);
   const sortBy = els.sortBy.value;
   let papers = [...state.papers];
   if (text) {
@@ -917,7 +1050,6 @@ function applyResultControls() {
   papers.sort((left, right) => sortPapers(left, right, sortBy));
   state.visiblePapers = papers;
   renderPapers(papers);
-  renderExecutionSteps(state.plan);
   updateDashboard();
 }
 
@@ -964,19 +1096,33 @@ function updateDashboard() {
   const sourceCount = selectedSources().length;
   const visibleCount = state.visiblePapers.length;
   const totalCount = state.papers.length;
+  const selectedSourceLabels = selectedSources().map(sourceLabel);
 
-  els.selectedSourceCount.textContent = `已选 ${sourceCount} 个`;
-  els.statSourceCount.textContent = String(sourceCount).padStart(2, "0");
-  els.statPaperCount.textContent = Intl.NumberFormat("en-US").format(totalCount);
-  els.statWorkflowLabel.textContent = state.workflowLabel;
-  els.statWorkflowDetail.textContent = state.workflowDetail;
-  els.workflowPill.textContent = state.workflowLabel;
+  if (els.selectedSourceCount) {
+    els.selectedSourceCount.textContent = `已选 ${sourceCount} 个`;
+  }
+  if (els.sourceConfigSummary) {
+    els.sourceConfigSummary.textContent = selectedSourceLabels.length
+      ? selectedSourceLabels.join(" / ")
+      : "未选择数据源";
+  }
+  if (els.plannerMode) {
+    els.plannerMode.textContent = state.workflowLabel || "等待生成方案";
+  }
+  if (els.modelConfigSummary) {
+    const model = els.llmModel.value.trim() || defaultModel(els.llmProvider.value);
+    els.modelConfigSummary.textContent = els.llmEnabled.checked
+      ? `${providerLabel(els.llmProvider.value)} / ${model}`
+      : "规则规划器 / 手动模式";
+  }
 
-  els.resultsCount.textContent = totalCount
-    ? visibleCount !== totalCount
-      ? `${visibleCount} / ${totalCount} 条记录`
-      : `${totalCount} 条记录`
-    : "0 条记录";
+  if (els.resultsCount) {
+    els.resultsCount.textContent = totalCount
+      ? visibleCount !== totalCount
+        ? `${visibleCount} / ${totalCount} 条记录`
+        : `${totalCount} 条记录`
+      : "0 条记录";
+  }
 }
 
 function setWorkflowStatus(label, detail) {
@@ -987,19 +1133,104 @@ function setWorkflowStatus(label, detail) {
 
 function loadWorkspaceMemory() {
   try {
-    const savedRaw = localStorage.getItem("litassist.savedPapers.v1");
-    const historyRaw = localStorage.getItem("litassist.history.v1");
+    const savedRaw = localStorage.getItem(SAVED_PAPERS_STORAGE_KEY);
+    const historyRaw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    const workspaceRaw = localStorage.getItem(WORKSPACE_SNAPSHOT_STORAGE_KEY);
     state.savedPapers = savedRaw ? JSON.parse(savedRaw) : [];
     state.history = historyRaw ? JSON.parse(historyRaw) : [];
+    state.workspaceSnapshot = workspaceRaw ? JSON.parse(workspaceRaw) : null;
   } catch {
     state.savedPapers = [];
     state.history = [];
+    state.workspaceSnapshot = null;
   }
 }
 
 function persistWorkspaceMemory() {
-  localStorage.setItem("litassist.savedPapers.v1", JSON.stringify(state.savedPapers));
-  localStorage.setItem("litassist.history.v1", JSON.stringify(state.history));
+  try {
+    localStorage.setItem(SAVED_PAPERS_STORAGE_KEY, JSON.stringify(state.savedPapers));
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(state.history));
+  } catch {}
+  persistWorkspaceSnapshot();
+}
+
+function persistWorkspaceSnapshot() {
+  if (!state.workspaceRestored) return;
+  const snapshot = {
+    need: els.need.value.trim(),
+    zhKeywords: els.zhKeywords.value,
+    enKeywords: els.enKeywords.value,
+    limit: els.limit.value,
+    fromYear: els.fromYear.value,
+    preferRecent: els.preferRecent.checked,
+    useLlm: els.useLlm.checked,
+    applyImport: els.applyImport.checked,
+    sources: selectedSources(),
+    plan: state.plan,
+    papers: state.papers,
+    sourceMeta: state.sourceMeta,
+    reportPath: state.reportPath,
+    reportUrl: els.reportLink?.hidden ? "" : els.reportLink?.getAttribute("href") || "",
+    outputView: state.outputView,
+    status: els.status.textContent || "",
+  };
+  state.workspaceSnapshot = snapshot;
+  try {
+    localStorage.setItem(WORKSPACE_SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {}
+}
+
+function restoreWorkspaceSnapshot() {
+  if (state.workspaceRestored) return;
+  state.workspaceRestored = true;
+  const snapshot = state.workspaceSnapshot;
+  if (!snapshot || typeof snapshot !== "object") return;
+
+  if (typeof snapshot.need === "string") els.need.value = snapshot.need;
+  if (typeof snapshot.zhKeywords === "string") els.zhKeywords.value = snapshot.zhKeywords;
+  if (typeof snapshot.enKeywords === "string") els.enKeywords.value = snapshot.enKeywords;
+  if (typeof snapshot.limit !== "undefined" && snapshot.limit !== null) {
+    els.limit.value = snapshot.limit;
+  }
+  if (typeof snapshot.fromYear !== "undefined" && snapshot.fromYear !== null) {
+    els.fromYear.value = snapshot.fromYear;
+  }
+  if (typeof snapshot.preferRecent !== "undefined") {
+    els.preferRecent.checked = Boolean(snapshot.preferRecent);
+  }
+  if (typeof snapshot.useLlm !== "undefined") {
+    els.useLlm.checked = Boolean(snapshot.useLlm);
+  }
+  if (typeof snapshot.applyImport !== "undefined") {
+    els.applyImport.checked = Boolean(snapshot.applyImport);
+  }
+  if (Array.isArray(snapshot.sources)) {
+    const selected = new Set(snapshot.sources);
+    for (const input of sourceInputs) {
+      input.checked = selected.has(input.value);
+    }
+  }
+
+  state.plan = snapshot.plan || null;
+  state.papers = Array.isArray(snapshot.papers) ? snapshot.papers : [];
+  state.sourceMeta = snapshot.sourceMeta || {};
+  state.reportPath = snapshot.reportPath || "";
+  state.selectedKeys = new Set();
+
+  renderSourceBadges();
+  updateSearchSettingsSummary();
+  clearErrors();
+  els.keywordOutput.innerHTML = "";
+  els.planDetailOutput.innerHTML = "";
+  if (state.plan) {
+    renderPlan(state.plan);
+  }
+  updateReportLink(snapshot.reportUrl || "");
+  applyResultControls();
+  if (snapshot.status) {
+    setStatus(snapshot.status);
+  }
+  setFlowStep(snapshot.outputView || (state.papers.length ? "search" : state.plan ? "plan" : "ask"));
 }
 
 function isSavedPaper(paper) {
@@ -1066,65 +1297,178 @@ function clearSavedPapers() {
 
 function renderSavedPapers() {
   const query = els.savedFilterText.value.trim().toLowerCase();
+  const authorQuery = els.savedAuthorFilter.value.trim().toLowerCase();
+  const yearFilter = els.savedYearFilter.value.trim();
+  const sourceFilter = els.savedSourceFilter.value.trim().toLowerCase();
+  const tagFilter = els.savedTagFilter.value.trim().toLowerCase();
+  const importedOnly = els.savedImportedFilter.checked;
   let papers = [...state.savedPapers];
   if (query) {
     papers = papers.filter((paper) =>
-      [paper.title || "", (paper.authors || []).join(" "), paper.venue || "", paper.abstract || ""]
+      [paper.title || "", paper.abstract || "", paper.venue || "", paper.doi || "", paper.url || ""]
         .join(" ")
         .toLowerCase()
         .includes(query),
     );
   }
+  if (authorQuery) {
+    papers = papers.filter((paper) =>
+      (paper.authors || []).join(" ").toLowerCase().includes(authorQuery),
+    );
+  }
+  if (yearFilter) {
+    papers = papers.filter((paper) => String(paper.year || "").includes(yearFilter));
+  }
+  if (sourceFilter) {
+    papers = papers.filter((paper) => {
+      const sources = (paper.sources || [paper.source]).filter(Boolean).map(sourceLabel).join(" ");
+      return sources.toLowerCase().includes(sourceFilter);
+    });
+  }
+  if (tagFilter) {
+    papers = papers.filter((paper) =>
+      paperTags(paper).join(" ").toLowerCase().includes(tagFilter),
+    );
+  }
+  if (importedOnly) {
+    papers = papers.filter((paper) => paperImported(paper));
+  }
 
   els.savedPapers.innerHTML = "";
   els.savedEmpty.hidden = papers.length !== 0;
-  els.savedCount.textContent = `已收藏 ${state.savedPapers.length} 篇`;
-  els.savedUpdated.textContent = state.savedPapers.length ? "已同步本地存储" : "暂无更新";
+  els.savedCount.textContent = state.savedPapers.length;
   els.clearSaved.disabled = state.savedPapers.length === 0;
+  const importedCount = state.savedPapers.filter((paper) => paperImported(paper)).length;
+  els.savedImportedCount.textContent = importedCount;
+  els.savedPendingCount.textContent = Math.max(state.savedPapers.length - importedCount, 0);
 
   for (const paper of papers) {
-    const node = els.paperTemplate.content.firstElementChild.cloneNode(true);
-    node.dataset.paperKey = paperKey(paper);
+    els.savedPapers.append(createSavedPaperCard(paper));
+  }
+}
 
-    const checkbox = node.querySelector(".paper-checkbox");
-    checkbox.checked = true;
-    checkbox.disabled = true;
+function paperImported(paper) {
+  return Boolean(paper.imported || paper.zoteroImported || paper.zoteroKey);
+}
 
-    node.querySelector(".paper-rank-badge").textContent = "收藏";
-    node.querySelector(".paper-domain").textContent = paperDomainLabel(paper);
-    node.querySelector(".paper-title").textContent = paper.title || "未命名文献";
-    node.querySelector(".paper-authors").textContent =
-      (paper.authors || []).slice(0, 8).join(", ") || "作者信息待补";
-    node.querySelector(".paper-abstract").textContent = trimText(
-      paper.abstract || "暂无摘要。",
-      420,
-    );
+function paperTags(paper) {
+  const tags = [];
+  if (Array.isArray(paper.userTags)) tags.push(...paper.userTags);
+  if (Array.isArray(paper.tags)) {
+    for (const tag of paper.tags) {
+      if (!tag) continue;
+      if (String(tag).startsWith("source:")) continue;
+      tags.push(tag);
+    }
+  }
+  return [...new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))];
+}
 
-    const metrics = node.querySelector(".paper-metrics");
-    addPaperMetric(metrics, "年份", paper.year || "暂无");
-    addPaperMetric(metrics, "引用", paper.cited_by_count ?? "暂无");
-    addPaperMetric(metrics, "开放获取", paper.oa_status || "未知");
+function createSavedPaperCard(paper) {
+  const article = document.createElement("article");
+  article.className = "saved-paper-card";
+  const imported = paperImported(paper);
+  const tags = paperTags(paper);
+  const sources = (paper.sources || [paper.source]).filter(Boolean).map(sourceLabel);
+  const linkHref = paper.url || (paper.doi ? `https://doi.org/${paper.doi}` : "");
 
-    const sources = (paper.sources || [paper.source]).filter(Boolean).map(sourceLabel);
-    node.querySelector(".paper-meta-line").textContent = [
-      paper.venue || "期刊/会议待补",
-      paper.year || "年份待补",
-      sources.join(" · "),
-    ]
-      .filter(Boolean)
-      .join(" · ");
+  article.innerHTML = `
+    <div class="saved-paper-top">
+      <div class="saved-paper-badges">
+        <span class="saved-paper-badge">${escapeHtml(sources.join(" / ") || "来源待补")}</span>
+        <span class="saved-paper-badge ${imported ? "imported" : "pending"}">${imported ? "已同步 Zotero" : "未同步 Zotero"}</span>
+      </div>
+      <span class="saved-paper-year">${escapeHtml(String(paper.year || "年份未知"))}</span>
+    </div>
+    <h3 class="saved-paper-title">${escapeHtml(paper.title || "未命名文献")}</h3>
+    <p class="saved-paper-authors">${escapeHtml((paper.authors || []).slice(0, 10).join(", ") || "作者信息待补")}</p>
+    <p class="saved-paper-abstract">${escapeHtml(trimText(paper.abstract || "暂无摘要。", 360))}</p>
+    <div class="saved-paper-tags">
+      ${
+        tags.length
+          ? tags
+              .map((tag) => `<span class="saved-paper-tag">${escapeHtml(tag)}</span>`)
+              .join("")
+          : '<span class="saved-paper-tag muted">暂无标签</span>'
+      }
+    </div>
+    <div class="saved-paper-meta">
+      <span>${escapeHtml(paper.venue || "期刊/会议待补")}</span>
+      <span>${escapeHtml(`引用 ${paper.cited_by_count ?? "暂无"}`)}</span>
+      <span>${escapeHtml(`DOI ${paper.doi || "暂无"}`)}</span>
+    </div>
+    <div class="saved-paper-links"></div>
+    <div class="saved-paper-actions">
+      ${
+        linkHref
+          ? `<a class="saved-paper-action-link" href="${escapeHtml(linkHref)}" target="_blank" rel="noreferrer">查看详情</a>`
+          : ""
+      }
+      <button type="button" data-saved-action="tag">${tags.length ? "编辑标签" : "添加标签"}</button>
+      <button type="button" data-saved-action="import">${imported ? "重新同步 Zotero" : "导入 Zotero"}</button>
+      <button type="button" data-saved-action="remove" class="danger">取消收藏</button>
+    </div>
+  `;
 
-    const links = node.querySelector(".paper-links");
-    addLink(links, "详情", paper.url);
-    addLink(links, "PDF", paper.pdf_url);
-    if (paper.doi) addLink(links, "DOI", `https://doi.org/${paper.doi}`);
+  const links = article.querySelector(".saved-paper-links");
+  addLink(links, "原文链接", paper.url);
+  addLink(links, "PDF", paper.pdf_url);
+  if (paper.doi) addLink(links, "DOI", `https://doi.org/${paper.doi}`);
+  if (!links.childElementCount) links.remove();
 
-    const favoriteButton = node.querySelector(".paper-favorite");
-    favoriteButton.textContent = "取消收藏";
-    favoriteButton.classList.add("active");
-    favoriteButton.addEventListener("click", () => toggleSavePaper(paper));
+  article.querySelector('[data-saved-action="tag"]').addEventListener("click", () => {
+    editSavedPaperTags(paper);
+  });
+  article.querySelector('[data-saved-action="import"]').addEventListener("click", () => {
+    importSavedPaper(paper);
+  });
+  article.querySelector('[data-saved-action="remove"]').addEventListener("click", () => {
+    toggleSavePaper(paper);
+  });
 
-    els.savedPapers.append(node);
+  return article;
+}
+
+function editSavedPaperTags(paper) {
+  const current = Array.isArray(paper.userTags) ? paper.userTags.join(", ") : "";
+  const value = window.prompt("请输入标签，使用逗号分隔。", current);
+  if (value === null) return;
+  paper.userTags = splitKeywords(value);
+  persistWorkspaceMemory();
+  renderSavedPapers();
+  renderPapers(state.visiblePapers);
+  setStatus("已更新文献标签。");
+}
+
+async function importSavedPaper(paper) {
+  setBusy(true, "正在写入 Zotero。");
+  try {
+    const data = await postJson("/api/import-zotero", {
+      papers: [paper],
+      limit: 1,
+      apply: true,
+    });
+    const result = data.result || {};
+    paper.imported = true;
+    paper.zoteroImported = true;
+    persistWorkspaceMemory();
+    renderSavedPapers();
+    renderPapers(state.visiblePapers);
+    addHistoryEntry("收藏页导入 Zotero", {
+      title: paper.title || "未命名文献",
+      created: result.created || 0,
+      skipped: result.skipped || 0,
+      errors: (result.errors || []).length,
+    });
+    if (result.errors && result.errors.length) {
+      showError(result.errors.join("\n"));
+    } else {
+      setStatus(`已同步到 Zotero：创建 ${result.created || 0}，跳过 ${result.skipped || 0}。`);
+    }
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -1143,16 +1487,383 @@ function addHistoryEntry(action, payload = {}) {
 
 function renderHistory() {
   els.historyList.innerHTML = "";
-  els.historyEmpty.hidden = state.history.length !== 0;
-  els.historyCount.textContent = `共 ${state.history.length} 条`;
+  const query = els.historyFilterText.value.trim().toLowerCase();
+  const entries = query
+    ? state.archiveItems.filter((item) => {
+        const blob = [
+          item.title,
+          item.need,
+          formatHistoryValue(item.zhKeywords),
+          formatHistoryValue(item.enKeywords),
+          formatHistoryValue(item.sources),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return blob.includes(query);
+      })
+    : state.archiveItems;
 
-  for (const item of state.history) {
+  els.historyEmpty.hidden = entries.length !== 0;
+  els.historyCount.textContent = `共 ${entries.length} 个任务`;
+
+  for (const item of entries) {
     const node = document.createElement("article");
-    node.className = "history-item";
-    const summary = historySummary(item.payload);
-    node.innerHTML = `<h4>${escapeHtml(item.action)}</h4><p>${escapeHtml(formatHistoryTime(item.time))} · ${escapeHtml(summary)}</p>`;
+    node.className = `archive-task-card ${item.id === state.archiveSelectedId ? "active" : ""}`;
+    const keywordSummary = [
+      ...(item.zhKeywords || []).slice(0, 3),
+      ...(item.enKeywords || []).slice(0, 2),
+    ].join(" / ") || "暂无关键词";
+    node.innerHTML = `
+      <div class="archive-task-top">
+        <div>
+          <h4>${escapeHtml(item.title || item.need || "未命名任务")}</h4>
+          <p class="history-item-meta">${escapeHtml(trimText(item.need || "暂无研究问题。", 96))}</p>
+        </div>
+        <span class="archive-status-badge ${archiveStatusClass(item.status)}">${escapeHtml(item.status || "已归档")}</span>
+      </div>
+      <div class="archive-task-meta">
+        <span>${escapeHtml(formatHistoryTime(item.createdAt))}</span>
+        <span>${escapeHtml(formatSources(item.sources))}</span>
+        <span>${escapeHtml(`${item.paperCount || 0} 篇结果`)}</span>
+      </div>
+      <p class="archive-task-keywords">${escapeHtml(keywordSummary)}</p>
+    `;
+    node.tabIndex = 0;
+    node.addEventListener("click", () => loadArchiveDetail(item.id));
+    node.addEventListener("keydown", (event) => {
+      if (!["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      loadArchiveDetail(item.id);
+    });
     els.historyList.append(node);
   }
+
+  renderArchiveDetail();
+}
+
+async function loadArchive(showToast = false) {
+  try {
+    const response = await fetch("/api/archive");
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "读取历史归档失败。");
+    }
+    state.archiveItems = Array.isArray(data.items) ? data.items : [];
+    if (!state.archiveItems.some((item) => item.id === state.archiveSelectedId)) {
+      state.archiveSelectedId = state.archiveItems[0]?.id || "";
+      state.archiveDetail = null;
+    }
+    renderHistory();
+    if (state.archiveSelectedId) {
+      await loadArchiveDetail(state.archiveSelectedId, { silent: true });
+    } else {
+      renderArchiveDetail();
+    }
+    if (showToast) setStatus("历史归档已刷新。");
+  } catch (error) {
+    state.archiveItems = [];
+    state.archiveSelectedId = "";
+    state.archiveDetail = null;
+    renderHistory();
+    renderArchiveDetail();
+    if (showToast || state.activePage === "archive") {
+      setStatus(`读取历史归档失败：${error.message}`);
+    }
+  }
+}
+
+async function loadArchiveDetail(runId, { silent = false } = {}) {
+  if (!runId) {
+    state.archiveSelectedId = "";
+    state.archiveDetail = null;
+    renderHistory();
+    renderArchiveDetail();
+    return;
+  }
+  state.archiveSelectedId = runId;
+  renderHistory();
+  try {
+    const response = await fetch(`/api/archive/${encodeURIComponent(runId)}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "读取归档详情失败。");
+    }
+    state.archiveDetail = data.item || null;
+    renderArchiveDetail();
+  } catch (error) {
+    state.archiveDetail = null;
+    renderArchiveDetail();
+    if (!silent) {
+      setStatus(`读取归档详情失败：${error.message}`);
+    }
+  }
+}
+
+function renderArchiveDetail() {
+  if (!state.archiveDetail) {
+    els.archiveDetail.innerHTML = `
+      <div class="empty-placeholder compact-empty">
+        <h3>选择一个历史任务</h3>
+        <p>右侧会展示当时的需求配置、检索条件、方案和结果摘要。</p>
+      </div>
+    `;
+    return;
+  }
+  const entry = state.archiveDetail;
+  const plan = entry.plan || {};
+  const papers = Array.isArray(entry.papers) ? entry.papers : [];
+  const sourceMeta = entry.sourceMeta || {};
+  const sourceMetaHtml = Object.entries(sourceMeta)
+    .map(([key, meta]) => {
+      const fragments = [
+        sourceLabel(key),
+        meta.usedCache ? "缓存命中" : "",
+        meta.budgetStatus ? `状态 ${meta.budgetStatus}` : "",
+        meta.remainingThisMonth ?? "" ? `剩余 ${meta.remainingThisMonth}` : "",
+      ].filter(Boolean);
+      return `<li>${escapeHtml(fragments.join(" · "))}</li>`;
+    })
+    .join("");
+  const previewHtml = papers.length
+    ? papers
+        .slice(0, 5)
+        .map(
+          (paper) => `
+            <article class="archive-paper-preview">
+              <h5>${escapeHtml(paper.title || "未命名文献")}</h5>
+              <p>${escapeHtml((paper.authors || []).slice(0, 6).join(", ") || "作者信息待补")}</p>
+              <span>${escapeHtml(`${paper.year || "年份未知"} · ${(paper.venue || "来源待补")}`)}</span>
+            </article>
+          `,
+        )
+        .join("")
+    : '<p class="history-item-meta">暂无结果摘要。</p>';
+
+  els.archiveDetail.innerHTML = `
+    <div class="archive-detail-head">
+      <div>
+        <p class="eyebrow">任务详情</p>
+        <h3>${escapeHtml(entry.title || entry.need || "未命名任务")}</h3>
+        <p class="archive-detail-need">${escapeHtml(entry.need || "暂无研究问题。")}</p>
+      </div>
+      <span class="archive-status-badge ${archiveStatusClass(entry.status)}">${escapeHtml(entry.status || "已归档")}</span>
+    </div>
+    <div class="archive-detail-meta">
+      <span>${escapeHtml(formatHistoryTime(entry.createdAt))}</span>
+      <span>${escapeHtml(formatSources(entry.sources))}</span>
+      <span>${escapeHtml(`${papers.length} 篇候选文献`)}</span>
+      <span>${escapeHtml(`当前收藏命中 ${papers.filter((paper) => isSavedPaper(paper)).length} 篇`)}</span>
+    </div>
+    <div class="archive-actions">
+      <button type="button" data-history-action="open">重新打开</button>
+      <button type="button" data-history-action="replay">复用配置</button>
+      <button type="button" data-history-action="search">重新检索</button>
+      <button type="button" data-history-action="delete" class="danger">删除归档</button>
+      ${
+        entry.reportUrl
+          ? `<a class="saved-paper-action-link" href="${escapeHtml(entry.reportUrl)}" target="_blank" rel="noreferrer">查看报告</a>`
+          : ""
+      }
+    </div>
+    <div class="archive-detail-grid">
+      <section class="archive-detail-section">
+        <h4>需求配置</h4>
+        <p>${escapeHtml(entry.need || "暂无研究问题。")}</p>
+        <div class="archive-chip-row">
+          ${keywordChipsHtml(plan.zh_keywords || entry.zhKeywords || [], "中文")}
+          ${keywordChipsHtml(plan.en_keywords || entry.enKeywords || [], "英文")}
+        </div>
+      </section>
+      <section class="archive-detail-section">
+        <h4>检索条件</h4>
+        <ul class="archive-detail-list">
+          <li>起始年份：${escapeHtml(formatArchiveField(entry.fromYear))}</li>
+          <li>每源条数：${escapeHtml(formatArchiveField(entry.limit))}</li>
+          <li>优先最新/高被引：${escapeHtml(formatArchiveBoolean(entry.preferRecent))}</li>
+          <li>AI 优化检索词：${escapeHtml(formatArchiveBoolean(entry.useLlm))}</li>
+        </ul>
+      </section>
+      <section class="archive-detail-section">
+        <h4>检索方案</h4>
+        <ul class="archive-detail-list">
+          ${archiveListItems(plan.search_strategy)}
+          ${!Array.isArray(plan.search_strategy) || !plan.search_strategy.length ? "<li>暂无方案说明。</li>" : ""}
+        </ul>
+      </section>
+      <section class="archive-detail-section">
+        <h4>来源与模型</h4>
+        <ul class="archive-detail-list">
+          <li>规划方式：${escapeHtml(plan.planner === "llm" ? "大模型规划器" : "规则规划器")}</li>
+          <li>数据源：${escapeHtml(formatSources(entry.sources))}</li>
+          ${sourceMetaHtml || "<li>暂无来源元数据。</li>"}
+        </ul>
+      </section>
+      <section class="archive-detail-section full-width">
+        <h4>结果摘要</h4>
+        <div class="archive-paper-preview-list">${previewHtml}</div>
+      </section>
+    </div>
+  `;
+
+  for (const button of els.archiveDetail.querySelectorAll("[data-history-action]")) {
+    button.addEventListener("click", () => handleHistoryAction(entry, button.dataset.historyAction));
+  }
+}
+
+async function handleHistoryAction(entry, action) {
+  if (action === "open") {
+    openArchiveTask(entry);
+    return;
+  }
+  if (action === "delete") {
+    await deleteArchiveTask(entry);
+    return;
+  }
+  if (action === "replay") {
+    applyHistoryPayload(archiveConfigPayload(entry));
+    setActivePage("search");
+    setStatus("已复用历史配置到检索工作区。");
+    return;
+  }
+  if (action === "search") {
+    applyHistoryPayload(archiveConfigPayload(entry));
+    setActivePage("search");
+    await runSearch();
+  }
+}
+
+function openArchiveTask(entry) {
+  applyHistoryPayload(archiveConfigPayload(entry));
+  state.plan = entry.plan || null;
+  state.papers = Array.isArray(entry.papers) ? entry.papers : [];
+  state.sourceMeta = entry.sourceMeta || {};
+  state.reportPath = entry.reportPath || entry.reportUrl || "";
+  state.selectedKeys = new Set();
+  renderPlan(state.plan);
+  renderErrors(entry.errors || {});
+  renderSourceSummary(entry.errors || {}, state.sourceMeta);
+  updateReportLink(entry.reportUrl || "");
+  applyResultControls();
+  setFlowStep(state.papers.length ? "search" : state.plan ? "plan" : "ask");
+  setWorkflowStatus(entry.status || "已归档", "已从历史归档恢复该任务。");
+  persistWorkspaceSnapshot();
+  setActivePage("search");
+  setStatus("已重新打开历史任务。");
+}
+
+async function deleteArchiveTask(entry) {
+  try {
+    const data = await postJson("/api/archive/delete", { runId: entry.id });
+    if (!data.ok) throw new Error("删除失败。");
+    if (state.archiveSelectedId === entry.id) {
+      state.archiveSelectedId = "";
+      state.archiveDetail = null;
+    }
+    await loadArchive();
+    setStatus("已删除该条历史归档。");
+  } catch (error) {
+    setStatus(`删除归档失败：${error.message}`);
+  }
+}
+
+function archiveConfigPayload(entry = {}) {
+  const plan = entry.plan || {};
+  return {
+    need: plan.need || entry.need || "",
+    zhKeywords: plan.zh_keywords || entry.zhKeywords || [],
+    enKeywords: plan.en_keywords || entry.enKeywords || [],
+    limit: entry.limit,
+    fromYear: entry.fromYear,
+    preferRecent: entry.preferRecent,
+    useLlm: entry.useLlm,
+    sources: entry.sources || Object.keys(plan.queries || {}),
+  };
+}
+
+function applyHistoryPayload(payload = {}) {
+  const zhKeywords = payload.zhKeywords ?? payload.zh_keywords;
+  const enKeywords = payload.enKeywords ?? payload.en_keywords;
+  if (typeof payload.need === "string") els.need.value = payload.need;
+  if (Array.isArray(zhKeywords)) {
+    els.zhKeywords.value = zhKeywords.join(", ");
+  } else if (typeof zhKeywords === "string") {
+    els.zhKeywords.value = zhKeywords;
+  }
+  if (Array.isArray(enKeywords)) {
+    els.enKeywords.value = enKeywords.join(", ");
+  } else if (typeof enKeywords === "string") {
+    els.enKeywords.value = enKeywords;
+  }
+  if (typeof payload.limit !== "undefined" && payload.limit !== null) els.limit.value = payload.limit;
+  if (typeof payload.fromYear !== "undefined" && payload.fromYear !== null) els.fromYear.value = payload.fromYear;
+  if (typeof payload.preferRecent !== "undefined") els.preferRecent.checked = Boolean(payload.preferRecent);
+  if (typeof payload.useLlm !== "undefined") els.useLlm.checked = Boolean(payload.useLlm);
+  if (payload.sources) {
+    const selectedSources = new Set(Array.isArray(payload.sources) ? payload.sources : []);
+    for (const input of sourceInputs) {
+      input.checked = selectedSources.has(input.value);
+    }
+    renderSourceBadges();
+  }
+  updateSearchSettingsSummary();
+  updateDashboard();
+  persistWorkspaceSnapshot();
+}
+
+function formatSources(sources) {
+  if (!Array.isArray(sources) || !sources.length) return "暂无来源";
+  return sources.map(sourceLabel).join(" / ");
+}
+
+function archiveStatusClass(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized.includes("成功") || normalized.includes("完成") || normalized.includes("归档")) {
+    return "success";
+  }
+  if (normalized.includes("失败")) return "failed";
+  if (normalized.includes("中断")) return "warning";
+  if (normalized.includes("进行")) return "running";
+  return "neutral";
+}
+
+function keywordChipsHtml(keywords, label) {
+  if (!Array.isArray(keywords) || !keywords.length) {
+    return `<div class="archive-chip-group"><strong>${escapeHtml(label)}</strong><span class="saved-paper-tag muted">暂无</span></div>`;
+  }
+  return `
+    <div class="archive-chip-group">
+      <strong>${escapeHtml(label)}</strong>
+      ${keywords
+        .slice(0, 6)
+        .map((keyword) => `<span class="saved-paper-tag">${escapeHtml(keyword)}</span>`)
+        .join("")}
+    </div>
+  `;
+}
+
+function formatArchiveField(value) {
+  if (value === null || value === undefined || value === "") return "暂无数据";
+  return String(value);
+}
+
+function formatArchiveBoolean(value) {
+  if (value === null || value === undefined || value === "") return "暂无数据";
+  return value ? "是" : "否";
+}
+
+function archiveListItems(items) {
+  if (!Array.isArray(items) || !items.length) return "";
+  return items
+    .slice(0, 5)
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join("");
+}
+
+function formatHistoryValue(value) {
+  if (Array.isArray(value)) return value.join("、") || "空";
+  if (value === null || value === undefined || value === "") return "空";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }
 
 function historySummary(payload) {
@@ -1172,6 +1883,7 @@ function formatHistoryTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "时间未知";
   return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -1206,13 +1918,15 @@ function addLink(parent, label, href) {
   parent.append(link);
 }
 
-function updateReportLink(url) {
-  if (!url) {
+function updateReportLink(href) {
+  if (!els.reportLink) return;
+  if (!href) {
     els.reportLink.hidden = true;
+    els.reportLink.removeAttribute("href");
     return;
   }
   els.reportLink.hidden = false;
-  els.reportLink.href = url;
+  els.reportLink.href = href;
 }
 
 function sourceLabel(key) {
@@ -1236,6 +1950,9 @@ function setBusy(isBusy, message = "") {
 
 function setStatus(message) {
   els.status.textContent = message;
+  if (state.workspaceRestored) {
+    persistWorkspaceSnapshot();
+  }
 }
 
 function showError(message) {

@@ -29,19 +29,41 @@ class WebOfScienceSearcher(Searcher):
         wos_query = query
         if self.general.from_year:
             wos_query = f"({query}) AND PY=({self.general.from_year}-{_current_year()})"
-        params = {"q": wos_query, "limit": min(limit, 50), "page": 1}
+
+        page_limit = min(limit, 50)
+        page = 1
+        papers: list[Paper] = []
 
         try:
             with httpx.Client(
                 timeout=self.general.request_timeout_seconds, headers=headers
             ) as client:
-                response = client.get(self.config.endpoint, params=params)
-                response.raise_for_status()
-                payload = response.json()
+                while len(papers) < limit:
+                    params: dict[str, Any] = {
+                        "q": wos_query,
+                        "limit": page_limit,
+                        "page": page,
+                    }
+                    response = client.get(self.config.endpoint, params=params)
+                    response.raise_for_status()
+                    payload = response.json()
+
+                    hits = payload.get("hits", [])
+                    if not hits:
+                        break
+
+                    for item in hits:
+                        papers.append(self._to_paper(item))
+                        if len(papers) >= limit:
+                            break
+
+                    if len(hits) < page_limit:
+                        break
+                    page += 1
         except httpx.HTTPError as exc:
             raise SearchError(f"Web of Science request failed: {exc}") from exc
 
-        return [self._to_paper(item) for item in payload.get("hits", [])]
+        return papers
 
     def _to_paper(self, item: dict[str, Any]) -> Paper:
         title = _first(item.get("title")) or item.get("title") or "Untitled"

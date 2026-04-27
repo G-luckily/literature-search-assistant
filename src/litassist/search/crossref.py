@@ -19,9 +19,8 @@ class CrossrefSearcher(Searcher):
         self.config = config
 
     def search(self, query: str, limit: int) -> list[Paper]:
-        params: dict[str, Any] = {
+        shared_params: dict[str, Any] = {
             "query.bibliographic": query,
-            "rows": min(limit, 100),
             "sort": "relevance",
             "order": "desc",
             "select": ",".join(
@@ -40,28 +39,47 @@ class CrossrefSearcher(Searcher):
             ),
         }
         if self.config.from_year:
-            params["filter"] = ",".join(
+            shared_params["filter"] = ",".join(
                 [
                     f"from-pub-date:{self.config.from_year}-01-01",
                     f"until-pub-date:{date.today().year}-12-31",
                 ]
             )
         if self.config.contact_email:
-            params["mailto"] = self.config.contact_email
+            shared_params["mailto"] = self.config.contact_email
 
         headers = {"User-Agent": self.config.user_agent}
+        rows = min(limit, 100)
+        offset = 0
+        papers: list[Paper] = []
+
         try:
             with httpx.Client(
                 timeout=self.config.request_timeout_seconds, headers=headers
             ) as client:
-                response = client.get("https://api.crossref.org/works", params=params)
-                response.raise_for_status()
-                payload = response.json()
+                while len(papers) < limit:
+                    params = dict(shared_params, rows=rows, offset=offset)
+                    response = client.get(
+                        "https://api.crossref.org/works", params=params
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    message = payload.get("message") or {}
+                    items = message.get("items", [])
+                    total = message.get("total-results", 0)
+
+                    for item in items:
+                        papers.append(self._to_paper(item))
+                        if len(papers) >= limit:
+                            break
+
+                    offset += rows
+                    if offset >= total or not items:
+                        break
         except httpx.HTTPError as exc:
             raise SearchError(f"Crossref request failed: {exc}") from exc
 
-        items = payload.get("message", {}).get("items", [])
-        return [self._to_paper(item) for item in items]
+        return papers
 
     def _to_paper(self, item: dict[str, Any]) -> Paper:
         return Paper(

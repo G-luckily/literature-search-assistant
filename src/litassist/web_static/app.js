@@ -1,3 +1,5 @@
+const PAGE_SIZE = 20;
+
 const state = {
   plan: null,
   papers: [],
@@ -20,21 +22,16 @@ const state = {
   theme: document.documentElement.dataset.theme || "dark",
   intentSidebarCollapsed: false,
   selectedMockTaskId: "",
+  currentPage: 1,
+  searchHistory: [],
 };
 
 const THEME_STORAGE_KEY = "litassist.theme.v1";
 const SAVED_PAPERS_STORAGE_KEY = "litassist.savedPapers.v1";
 const HISTORY_STORAGE_KEY = "litassist.history.v1";
+const SEARCH_HISTORY_KEY = "litassist.searchHistory.v1";
 const WORKSPACE_SNAPSHOT_STORAGE_KEY = "litassist.workspaceSnapshot.v1";
-
-const MOCK_HISTORY = [
-  { id: "ai-zotero", title: "AI 辅助文献检索与 Zotero 协同管理", prompt: "我想研究 AI 辅助文献检索与 Zotero 协同管理，重点关注近五年的工具实践、知识组织和研究工作流。" },
-  { id: "youth-ai", title: "青年群体与人工智能使用经验", prompt: "我想研究青年群体与人工智能使用经验，关注教育、就业和社会参与。" },
-  { id: "emotion-capital", title: "公考青年的情感资本困境", prompt: "我想研究公考青年的情感资本困境，需要做文献检索回顾。" },
-  { id: "social-policy-ai", title: "人工智能与社会政策治理", prompt: "研究人工智能与社会政策治理的最新文献，包括风险治理、公共服务和算法责任。" },
-  { id: "knowledge-workflow", title: "知识管理工具与研究工作流", prompt: "我想比较 Zotero、Notion 与 AI 工具在学术研究工作流中的协同方式。" },
-  { id: "lit-review-method", title: "系统综述方法与智能检索策略", prompt: "我想研究系统综述方法与智能检索策略，重点关注检索式生成和证据筛选。" },
-];
+const DEFAULT_CANDIDATE_POOL_SIZE = 100;
 
 const els = {
   workspaceOverview: document.querySelector("#workspace-overview"),
@@ -116,8 +113,10 @@ const els = {
   flowPaneSearch: document.querySelector("#flow-pane-search"),
   flowPlanAction: document.querySelector("#flow-plan-action"),
   flowSearchAction: document.querySelector("#flow-search-action"),
+  confirmPlanSearch: document.querySelector("#confirm-plan-search"),
   topNavLinks: [...document.querySelectorAll(".topbar-link[data-page]")],
   sidebarNavLinks: [...document.querySelectorAll(".sidebar-link[data-page]")],
+  intentNavLinks: [...document.querySelectorAll(".intent-nav-link")],
 };
 
 const sourceInputs = [...document.querySelectorAll('input[name="source"]')];
@@ -162,6 +161,7 @@ els.outputTabPlan.addEventListener("click", () => setFlowStep("plan"));
 els.outputTabSearch.addEventListener("click", () => setFlowStep("search"));
 els.flowPlanAction.addEventListener("click", () => runPlan());
 els.flowSearchAction.addEventListener("click", () => runSearch());
+els.confirmPlanSearch.addEventListener("click", () => runSearch());
 for (const input of sourceInputs) {
   input.addEventListener("change", () => {
     renderSourceBadges();
@@ -170,7 +170,7 @@ for (const input of sourceInputs) {
   });
 }
 
-for (const link of [...els.topNavLinks, ...els.sidebarNavLinks]) {
+for (const link of [...els.topNavLinks, ...els.sidebarNavLinks, ...els.intentNavLinks]) {
   link.addEventListener("click", (event) => handleNavigation(event, link));
 }
 
@@ -182,7 +182,8 @@ loadArchive();
 updateDashboard();
 renderSavedPapers();
 renderHistory();
-renderMockHistory();
+loadSearchHistory();
+renderSearchHistory();
 updateSearchSettingsSummary();
 setFlowStep("ask");
 
@@ -217,31 +218,116 @@ function toggleIntentSidebar() {
   );
 }
 
-function renderMockHistory() {
-  els.intentHistoryList.innerHTML = "";
-  for (const task of MOCK_HISTORY) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `intent-history-item ${task.id === state.selectedMockTaskId ? "active" : ""}`;
-    button.textContent = task.title;
-    button.title = task.title;
-    button.addEventListener("click", () => {
-      state.selectedMockTaskId = task.id;
-      window.onSelectTask(task.id);
-      renderMockHistory();
+function loadSearchHistory() {
+  try {
+    const stored = localStorage.getItem(SEARCH_HISTORY_KEY);
+    if (stored) {
+      state.searchHistory = JSON.parse(stored);
+    }
+  } catch {}
+}
+
+function persistSearchHistory() {
+  try {
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(state.searchHistory.slice(0, 50)));
+  } catch {}
+}
+
+function renderSearchHistory() {
+  const list = els.intentHistoryList;
+  if (!list) return;
+  list.innerHTML = "";
+  const entries = state.searchHistory;
+  if (!entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-copy";
+    empty.textContent = "暂无检索记录";
+    list.append(empty);
+    return;
+  }
+  for (const entry of entries) {
+    const item = document.createElement("div");
+    item.className = `intent-history-item ${entry.id === state.selectedMockTaskId ? "active" : ""}`;
+    item.title = entry.need || entry.title;
+
+    const titleEl = document.createElement("span");
+    titleEl.className = "intent-history-title";
+    titleEl.textContent = entry.title || entry.need.slice(0, 40);
+
+    const metaParts = [];
+    if (entry.zhKeywordCount) metaParts.push(`${entry.zhKeywordCount} 中文词`);
+    if (entry.enKeywordCount) metaParts.push(`${entry.enKeywordCount} 英文词`);
+    if (entry.paperCount) metaParts.push(`${entry.paperCount} 篇文献`);
+    if (metaParts.length) {
+      const metaEl = document.createElement("span");
+      metaEl.className = "intent-history-meta";
+      metaEl.textContent = metaParts.join(" · ");
+      item.append(titleEl, metaEl);
+    } else {
+      item.append(titleEl);
+    }
+
+    item.addEventListener("click", () => {
+      onSelectSearchHistory(entry.id);
     });
-    els.intentHistoryList.append(button);
+    list.append(item);
   }
 }
 
-window.onSelectTask = function onSelectTask(taskId) {
-  const task = MOCK_HISTORY.find((item) => item.id === taskId);
-  if (!task) return;
-  els.need.value = task.prompt;
-  state.selectedMockTaskId = taskId;
-  setActivePage("search");
-  setStatus("已载入历史检索意图。");
+function addSearchHistory(need, title, sources, zhKeywordCount, enKeywordCount, paperCount, plan, papers) {
+  const entry = {
+    id: `search-${Date.now()}`,
+    title: title || need.slice(0, 40),
+    need,
+    sources: sources || [],
+    zhKeywordCount: zhKeywordCount || 0,
+    enKeywordCount: enKeywordCount || 0,
+    paperCount: paperCount || 0,
+    time: new Date().toISOString(),
+    plan: plan || null,
+    papers: Array.isArray(papers) ? papers.slice(0, 50).map(stripPaperRaw) : [],
+  };
+  state.searchHistory = [entry, ...state.searchHistory.filter((e) => e.id !== entry.id)].slice(0, 50);
+  persistSearchHistory();
+  renderSearchHistory();
+}
+
+function stripPaperRaw(paper) {
+  if (!paper || typeof paper !== "object") return paper;
+  const { raw, ...rest } = paper;
+  return rest;
+}
+
+function onSelectSearchHistory(id) {
+  const entry = state.searchHistory.find((e) => e.id === id);
+  if (!entry) return;
+  state.selectedMockTaskId = id;
+  els.need.value = entry.need;
+
+  if (entry.plan) {
+    state.plan = entry.plan;
+    state.papers = entry.papers || [];
+    state.visiblePapers = [];
+    state.sourceMeta = {};
+    state.selectedKeys = new Set();
+    renderPlan(state.plan);
+    clearErrors();
+    applyResultControls();
+    setFlowStep(state.papers.length ? "search" : "plan");
+    setStatus(
+      `已恢复历史检索：${state.papers.length} 篇文献`,
+    );
+  } else {
+    setStatus("已载入历史检索（仅恢复检索词，完整结果请查看历史归档）。");
+  }
+
+  renderSearchHistory();
   persistWorkspaceSnapshot();
+  setActivePage("search");
+}
+
+window.onSelectTask = function onSelectTask(taskId) {
+  onSelectSearchHistory(taskId);
 };
 
 function startNewResearch() {
@@ -249,7 +335,7 @@ function startNewResearch() {
   els.zhKeywords.value = "";
   els.enKeywords.value = "";
   els.fromYear.value = "";
-  els.limit.value = "8";
+  els.limit.value = String(DEFAULT_CANDIDATE_POOL_SIZE);
   els.preferRecent.checked = true;
   els.useLlm.checked = false;
   state.selectedMockTaskId = "";
@@ -266,7 +352,7 @@ function startNewResearch() {
   applyResultControls();
   setFlowStep("ask");
   setStatus("已新建文献课题。");
-  renderMockHistory();
+  renderSearchHistory();
   persistWorkspaceSnapshot();
   setActivePage("search");
 }
@@ -281,8 +367,12 @@ function applyTheme(theme, persist = true) {
     } catch {}
   }
   const nextMode = normalized === "dark" ? "日间模式" : "夜间模式";
-  const buttonLabel = normalized === "dark" ? "日间" : "夜间";
-  els.themeToggle.textContent = buttonLabel;
+  const sunIcon = els.themeToggle.querySelector(".theme-sun");
+  const moonIcon = els.themeToggle.querySelector(".theme-moon");
+  if (sunIcon && moonIcon) {
+    sunIcon.style.display = normalized === "dark" ? "" : "none";
+    moonIcon.style.display = normalized === "dark" ? "none" : "";
+  }
   els.themeToggle.setAttribute("aria-label", `切换到${nextMode}`);
   els.themeToggle.setAttribute("title", `切换到${nextMode}`);
 }
@@ -327,6 +417,7 @@ function setActivePage(page, updateHash = true) {
 
   activateLink(els.topNavLinks, normalized);
   activateLink(els.sidebarNavLinks, normalized);
+  activateLink(els.intentNavLinks, normalized);
 
   if (normalized === "search") {
     setFlowStep(state.papers.length ? "search" : state.plan ? "plan" : "ask");
@@ -377,11 +468,11 @@ function updateSearchSettingsSummary() {
   const enCount = splitKeywords(els.enKeywords.value).length;
   const keywordCount = zhCount + enCount;
   const fromYear = els.fromYear.value.trim();
-  const limit = els.limit.value.trim() || "8";
+  const limit = String(candidatePoolLimit());
   const parts = [
     keywordCount ? `${keywordCount} 组关键词` : "关键词待补充",
     fromYear ? `${fromYear} 起` : "年份待设置",
-    `每源 ${limit} 条`,
+    `候选池 ${limit}/源`,
   ];
   if (els.useLlm.checked) parts.push("AI 优化已启用");
   els.searchSettingsSummary.textContent = parts.join(" / ");
@@ -424,6 +515,7 @@ async function runPlan() {
   try {
     const data = await postJson("/api/plan", payloadBase());
     state.plan = data.plan;
+    state.sourceMeta = {};
     renderPlan(data.plan);
     setFlowStep("plan");
     persistWorkspaceSnapshot();
@@ -445,7 +537,7 @@ async function runSearch() {
   const payload = {
     ...payloadBase(),
     sources: selectedSources(),
-    limit: Number(els.limit.value || 8),
+    limit: candidatePoolLimit(),
     fromYear: els.fromYear.value ? Number(els.fromYear.value) : null,
     preferRecent: els.preferRecent.checked,
   };
@@ -488,6 +580,19 @@ async function runSearch() {
     showError(error.message);
   } finally {
     setBusy(false);
+    // Save search history
+    try {
+      if (payload.need) {
+        const historyTitle = payload.need.length > 40
+          ? payload.need.slice(0, 40) + "…"
+          : payload.need;
+        const zhCount = (state.plan?.zh_keywords || []).length;
+        const enCount = (state.plan?.en_keywords || []).length;
+        addSearchHistory(payload.need, historyTitle, payload.sources, zhCount, enCount, state.papers.length, state.plan, state.papers);
+      }
+    } catch (e) {
+      console.warn("Failed to save search history:", e);
+    }
   }
 }
 
@@ -564,10 +669,11 @@ async function loadConfig() {
 function renderConfig(config) {
   const general = config.general || {};
   els.fromYear.value = general.fromYear || "";
+  els.limit.value = general.maxResultsPerSource || DEFAULT_CANDIDATE_POOL_SIZE;
   els.preferRecent.checked = general.preferRecent !== false;
   const llm = config.llm || {};
   els.llmEnabled.checked = Boolean(llm.enabled);
-  els.useLlm.checked = Boolean(llm.enabled);
+  els.useLlm.checked = Boolean(llm.hasApiKey);
   els.llmProvider.value = llm.provider || "deepseek";
   els.llmModel.value = llm.model || defaultModel(els.llmProvider.value);
   els.llmEndpoint.value = llm.endpoint || defaultEndpoint(els.llmProvider.value);
@@ -584,6 +690,12 @@ function renderConfig(config) {
 
 function renderSourceConfig(config) {
   const sources = config.sources || {};
+  const enabledSources = new Set(config.general?.enabledSources || []);
+  if (enabledSources.size) {
+    for (const input of sourceInputs) {
+      input.checked = enabledSources.has(input.value);
+    }
+  }
   els.semanticScholarApiKey.value = "";
   els.googleScholarApiKey.value = "";
   els.webOfScienceApiKey.value = "";
@@ -734,99 +846,47 @@ async function postJson(url, payload) {
 
 function renderPlan(plan) {
   if (!plan) return;
-  renderKeywordOutput(plan);
-  renderPlanDetails(plan);
+  renderPlanValueLayer(plan);
+  renderPlanEngineLayer(plan);
   updatePlannerMode(plan);
 }
 
-function renderKeywordOutput(plan) {
+function renderPlanValueLayer(plan) {
   els.keywordOutput.innerHTML = "";
-  const sections = [
-    plannerGroup(plan),
-    keywordGroup("中文关键词", plan.zh_keywords || []),
-    keywordGroup("英文关键词", plan.en_keywords || []),
-    queryGroup(plan.queries || {}),
-  ];
-  for (const section of sections) {
-    if (section) els.keywordOutput.append(section);
-  }
+
+  const header = document.createElement("div");
+  header.className = "plan-summary-head";
+  header.innerHTML = `
+    <div>
+      <p>Search Plan</p>
+      <h4>方案已压缩为可执行摘要</h4>
+    </div>
+    <span>${escapeHtml(planBadgeText(plan))}</span>
+  `;
+
+  const grid = document.createElement("div");
+  grid.className = "plan-value-grid";
+  grid.append(researchQuestionPanel(plan), searchDimensionsPanel(plan), keywordClusterPanel(plan));
+
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "plan-edit-btn";
+  editBtn.textContent = "编辑方案";
+  editBtn.addEventListener("click", () => openPlanEditor(plan));
+
+  els.keywordOutput.append(header, editBtn, grid);
 }
 
-function plannerGroup(plan) {
+function researchQuestionPanel(plan) {
+  const questions = nonEmptyList(plan.research_questions);
+  const items = questions.length ? questions : [plan.need || "当前研究意图"];
   const box = document.createElement("section");
-  box.className = "keyword-group";
-  box.innerHTML = `<h4>规划方式</h4><p>${escapeHtml(plan.planner === "llm" ? "大模型结构化拆解" : "规则拆解")}</p>`;
-  return box;
-}
+  box.className = "plan-value-card";
+  box.innerHTML = "<h4>研究问题</h4>";
 
-function keywordGroup(title, keywords) {
-  const box = document.createElement("section");
-  box.className = "keyword-group";
-  box.innerHTML = `<h4>${escapeHtml(title)}</h4>`;
-  const chips = document.createElement("div");
-  chips.className = "chips";
-  if (!keywords.length) {
-    const empty = document.createElement("p");
-    empty.className = "empty-copy";
-    empty.textContent = "暂无关键词。";
-    box.append(empty);
-    return box;
-  }
-  for (const keyword of keywords) {
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = keyword;
-    chips.append(chip);
-  }
-  box.append(chips);
-  return box;
-}
-
-function queryGroup(queries) {
-  const box = document.createElement("section");
-  box.className = "keyword-group";
-  box.innerHTML = "<h4>分库检索式</h4>";
-  const list = document.createElement("div");
-  list.className = "query-list";
-  const entries = Object.entries(queries);
-  if (!entries.length) {
-    const item = document.createElement("div");
-    item.className = "query-item";
-    item.innerHTML = "<strong>暂无</strong><code>当前还没有生成检索式。</code>";
-    list.append(item);
-  } else {
-    for (const [source, query] of entries) {
-      const item = document.createElement("div");
-      item.className = "query-item";
-      item.innerHTML = `<strong>${escapeHtml(sourceLabel(source))}</strong><code>${escapeHtml(query)}</code>`;
-      list.append(item);
-    }
-  }
-  box.append(list);
-  return box;
-}
-
-function renderPlanDetails(plan) {
-  els.planDetailOutput.innerHTML = "";
-  const fragments = [
-    detailList("研究问题", plan.research_questions || []),
-    conceptList(plan.core_concepts || []),
-    detailList("纳入标准", plan.inclusion_criteria || []),
-    detailList("排除标准", plan.exclusion_criteria || []),
-    detailList("检索策略说明", plan.search_strategy || []),
-  ];
-  for (const fragment of fragments) {
-    if (fragment) els.planDetailOutput.append(fragment);
-  }
-}
-
-function detailList(title, items) {
-  if (!items.length) return null;
-  const box = document.createElement("section");
-  box.className = "detail-box";
-  box.innerHTML = `<h4>${escapeHtml(title)}</h4>`;
   const list = document.createElement("ul");
-  for (const item of items) {
+  list.className = "plan-question-list";
+  for (const item of items.slice(0, 4)) {
     const li = document.createElement("li");
     li.textContent = item;
     list.append(li);
@@ -835,25 +895,367 @@ function detailList(title, items) {
   return box;
 }
 
-function conceptList(concepts) {
-  if (!concepts.length) return null;
+function searchDimensionsPanel(plan) {
+  const dims = Array.isArray(plan.search_dimensions) ? plan.search_dimensions.filter(Boolean) : [];
+  if (!dims.length) return document.createDocumentFragment();
+
   const box = document.createElement("section");
-  box.className = "detail-box";
-  box.innerHTML = "<h4>核心概念</h4>";
+  box.className = "plan-value-card plan-keyword-card";
+  box.innerHTML = "<h4>检索维度拆解</h4>";
+
+  for (const dim of dims) {
+    const group = document.createElement("div");
+    group.className = "plan-keyword-cluster";
+
+    const zhTerms = nonEmptyList(dim.zh_terms).slice(0, 8);
+    const enTerms = nonEmptyList(dim.en_terms).slice(0, 8);
+    const dimName = dim.name || "";
+    const dimNameEn = dim.name_en || "";
+
+    group.innerHTML = `
+      <p>
+        <strong>${escapeHtml(dimName)}</strong>
+        ${dimNameEn ? `<span class="dim-en-label">${escapeHtml(dimNameEn)}</span>` : ""}
+      </p>
+    `;
+
+    if (zhTerms.length) {
+      const tags = document.createElement("div");
+      tags.className = "plan-pill-row";
+      for (const term of zhTerms) {
+        const pill = document.createElement("span");
+        pill.className = "plan-pill";
+        pill.textContent = term;
+        tags.append(pill);
+      }
+      group.append(tags);
+    }
+
+    if (enTerms.length) {
+      const tags = document.createElement("div");
+      tags.className = "plan-pill-row";
+      tags.style.marginTop = "6px";
+      for (const term of enTerms) {
+        const pill = document.createElement("span");
+        pill.className = "plan-pill plan-pill-en";
+        pill.textContent = term;
+        tags.append(pill);
+      }
+      group.append(tags);
+    }
+
+    box.append(group);
+  }
+
+  return box;
+}
+
+function keywordClusterPanel(plan) {
+  const box = document.createElement("section");
+  box.className = "plan-value-card plan-keyword-card plan-value-full";
+  box.innerHTML = "<h4>关键词簇</h4>";
+
+  const clusters = [
+    { label: "核心概念", items: conceptTags(plan.core_concepts || []) },
+    { label: "中文关键词", items: nonEmptyList(plan.zh_keywords).slice(0, 12) },
+    { label: "英文关键词", items: nonEmptyList(plan.en_keywords).slice(0, 12) },
+  ].filter((cluster) => cluster.items.length);
+
+  if (!clusters.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-copy";
+    empty.textContent = "暂无关键词，系统会在检索时自动拆解。";
+    box.append(empty);
+    return box;
+  }
+
+  for (const cluster of clusters) {
+    const group = document.createElement("div");
+    group.className = "plan-keyword-cluster";
+    group.innerHTML = `<p>${escapeHtml(cluster.label)}</p>`;
+    const tags = document.createElement("div");
+    tags.className = "plan-pill-row";
+    for (const keyword of cluster.items) {
+      const pill = document.createElement("span");
+      pill.className = "plan-pill";
+      pill.textContent = keyword;
+      tags.append(pill);
+    }
+    group.append(tags);
+    box.append(group);
+  }
+  return box;
+}
+
+function openPlanEditor(plan) {
+  const overlay = document.createElement("div");
+  overlay.className = "plan-editor-overlay";
+
+  const modal = document.createElement("div");
+  modal.className = "plan-editor-modal";
+
+  modal.innerHTML = `
+    <div class="plan-editor-head">
+      <h3>编辑检索方案</h3>
+      <p>修改后点击保存，方案将更新并重新应用到检索。</p>
+    </div>
+    <div class="plan-editor-body">
+      <label class="plan-editor-field">
+        <span>中文关键词（每行一个）</span>
+        <textarea id="plan-edit-zh" rows="5">${escapeHtml((plan.zh_keywords || []).join("\n"))}</textarea>
+      </label>
+      <label class="plan-editor-field">
+        <span>英文关键词（每行一个）</span>
+        <textarea id="plan-edit-en" rows="5">${escapeHtml((plan.en_keywords || []).join("\n"))}</textarea>
+      </label>
+      <label class="plan-editor-field">
+        <span>OpenAlex 检索式</span>
+        <textarea id="plan-edit-openalex" rows="2">${escapeHtml(plan.queries?.openalex || "")}</textarea>
+      </label>
+      <label class="plan-editor-field">
+        <span>Crossref 检索式</span>
+        <textarea id="plan-edit-crossref" rows="2">${escapeHtml(plan.queries?.crossref || "")}</textarea>
+      </label>
+      <label class="plan-editor-field">
+        <span>Semantic Scholar 检索式</span>
+        <textarea id="plan-edit-semantic" rows="2">${escapeHtml(plan.queries?.semantic_scholar || "")}</textarea>
+      </label>
+      <label class="plan-editor-field">
+        <span>Google Scholar 检索式</span>
+        <textarea id="plan-edit-google" rows="2">${escapeHtml(plan.queries?.google_scholar || "")}</textarea>
+      </label>
+      <label class="plan-editor-field">
+        <span>Web of Science 检索式</span>
+        <textarea id="plan-edit-wos" rows="2">${escapeHtml(plan.queries?.web_of_science || "")}</textarea>
+      </label>
+      <label class="plan-editor-field">
+        <span>CNKI 检索式</span>
+        <textarea id="plan-edit-cnki" rows="2">${escapeHtml(plan.queries?.cnki || "")}</textarea>
+      </label>
+    </div>
+    <div class="plan-editor-actions">
+      <button type="button" class="plan-editor-cancel">取消</button>
+      <button type="button" class="plan-editor-save">保存修改</button>
+    </div>
+  `;
+
+  overlay.append(modal);
+  document.body.append(overlay);
+
+  // Animate in
+  requestAnimationFrame(() => overlay.classList.add("open"));
+
+  const close = () => {
+    overlay.classList.remove("open");
+    setTimeout(() => overlay.remove(), 200);
+  };
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+
+  modal.querySelector(".plan-editor-cancel").addEventListener("click", close);
+
+  modal.querySelector(".plan-editor-save").addEventListener("click", () => {
+    const zhRaw = modal.querySelector("#plan-edit-zh").value;
+    const enRaw = modal.querySelector("#plan-edit-en").value;
+    plan.zh_keywords = zhRaw.split("\n").map(s => s.trim()).filter(Boolean);
+    plan.en_keywords = enRaw.split("\n").map(s => s.trim()).filter(Boolean);
+    plan.queries = plan.queries || {};
+    plan.queries.openalex = modal.querySelector("#plan-edit-openalex").value.trim();
+    plan.queries.crossref = modal.querySelector("#plan-edit-crossref").value.trim();
+    plan.queries.semantic_scholar = modal.querySelector("#plan-edit-semantic").value.trim();
+    plan.queries.google_scholar = modal.querySelector("#plan-edit-google").value.trim();
+    plan.queries.web_of_science = modal.querySelector("#plan-edit-wos").value.trim();
+    plan.queries.cnki = modal.querySelector("#plan-edit-cnki").value.trim();
+    // Clear stale query_rounds so they regenerate on next plan render
+    plan.query_rounds = {};
+
+    renderPlan(plan);
+    if (state.papers.length) {
+      applyResultControls();
+    }
+    close();
+    setStatus("检索方案已更新。");
+  });
+}
+
+function renderPlanEngineLayer(plan) {
+  els.planDetailOutput.innerHTML = "";
+
+  const details = document.createElement("details");
+  details.className = "plan-engine-panel";
+  details.innerHTML = `
+    <summary>
+      <span>查看底层布尔检索式与深度过滤策略</span>
+      <small>${escapeHtml(engineSummaryText(plan))}</small>
+    </summary>
+  `;
+
+  const body = document.createElement("div");
+  body.className = "plan-engine-body";
+  body.append(criteriaGrid(plan), queryRoundsPanel(plan));
+  details.append(body);
+  els.planDetailOutput.append(details);
+}
+
+function criteriaGrid(plan) {
+  const grid = document.createElement("div");
+  grid.className = "plan-criteria-grid";
+  const cards = [
+    detailCard("纳入标准", nonEmptyList(plan.inclusion_criteria)),
+    detailCard("排除标准", nonEmptyList(plan.exclusion_criteria)),
+    detailCard("检索策略", nonEmptyList(plan.search_strategy)),
+    detailCard("系统备注", nonEmptyList(plan.notes)),
+  ].filter(Boolean);
+  for (const card of cards) grid.append(card);
+  if (!cards.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-copy";
+    empty.textContent = "当前方案没有额外过滤条件。";
+    grid.append(empty);
+  }
+  return grid;
+}
+
+function detailCard(title, items) {
+  if (!items.length) return null;
+  const card = document.createElement("section");
+  card.className = "plan-engine-card";
+  card.innerHTML = `<h4>${escapeHtml(title)}</h4>`;
   const list = document.createElement("ul");
-  for (const concept of concepts) {
-    const parts = [
-      concept.label_zh || "",
-      concept.label_en || "",
-      (concept.synonyms_zh || []).join("，"),
-      (concept.synonyms_en || []).join(", "),
-    ].filter(Boolean);
+  for (const item of items.slice(0, 6)) {
     const li = document.createElement("li");
-    li.textContent = parts.join(" / ");
+    li.textContent = item;
     list.append(li);
   }
-  box.append(list);
-  return box;
+  card.append(list);
+  return card;
+}
+
+function queryRoundsPanel(plan) {
+  const panel = document.createElement("section");
+  panel.className = "plan-query-rounds";
+  panel.innerHTML = "<h4>分库检索式与查询轮次</h4>";
+
+  const sources = planSources(plan);
+  if (!sources.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-copy";
+    empty.textContent = "暂无底层检索式。";
+    panel.append(empty);
+    return panel;
+  }
+
+  for (const source of sources) {
+    panel.append(sourceQueryBlock(source, plan));
+  }
+  return panel;
+}
+
+function sourceQueryBlock(source, plan) {
+  const meta = state.sourceMeta?.[source] || {};
+  const rounds = queryRoundsForSource(plan, source);
+  const block = document.createElement("article");
+  block.className = "plan-query-source";
+  block.innerHTML = `
+    <div class="plan-query-source-head">
+      <strong>${escapeHtml(sourceLabel(source))}</strong>
+      <span>${escapeHtml(sourceMetaSummary(meta, rounds.length))}</span>
+    </div>
+  `;
+
+  const list = document.createElement("div");
+  list.className = "plan-query-list";
+  rounds.forEach((query, index) => {
+    const stat = roundStat(meta, index + 1);
+    const item = document.createElement("div");
+    item.className = "plan-query-item";
+    item.innerHTML = `
+      <div>
+        <strong>第 ${index + 1} 轮</strong>
+        <span>${escapeHtml(roundStatText(stat))}</span>
+      </div>
+      <code>${escapeHtml(query)}</code>
+    `;
+    list.append(item);
+  });
+  block.append(list);
+  return block;
+}
+
+function planSources(plan) {
+  return Array.from(
+    new Set([
+      ...Object.keys(plan.queries || {}),
+      ...Object.keys(plan.query_rounds || {}),
+    ]),
+  );
+}
+
+function queryRoundsForSource(plan, source) {
+  const rounds = nonEmptyList(plan.query_rounds?.[source]);
+  if (rounds.length) return rounds;
+  const primary = plan.queries?.[source];
+  return primary ? [primary] : [];
+}
+
+function conceptTags(concepts) {
+  return concepts
+    .flatMap((concept) => [
+      concept.label_zh || "",
+      concept.label_en || "",
+      ...(concept.synonyms_zh || []).slice(0, 2),
+      ...(concept.synonyms_en || []).slice(0, 2),
+    ])
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+function nonEmptyList(value) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
+function planBadgeText(plan) {
+  const keywordCount = nonEmptyList(plan.zh_keywords).length + nonEmptyList(plan.en_keywords).length;
+  const sourceCount = planSources(plan).length;
+  const roundCount = planSources(plan).reduce(
+    (total, source) => total + queryRoundsForSource(plan, source).length,
+    0,
+  );
+  const planner = plan.planner === "llm" ? "AI 规划" : "规则规划";
+  return `${planner} · ${keywordCount} 个关键词 · ${sourceCount} 个来源 · ${roundCount} 轮查询`;
+}
+
+function engineSummaryText(plan) {
+  const sourceCount = planSources(plan).length;
+  const roundCount = planSources(plan).reduce(
+    (total, source) => total + queryRoundsForSource(plan, source).length,
+    0,
+  );
+  return `${sourceCount} 个来源 / ${roundCount} 轮`;
+}
+
+function sourceMetaSummary(meta, fallbackRounds) {
+  const roundCount = meta.queryRoundCount ?? fallbackRounds;
+  const successful = meta.successfulRounds;
+  const unique = meta.uniqueBeforeDedupe;
+  if (unique !== undefined && unique !== null) {
+    return `${roundCount} 轮 · ${successful ?? 0} 轮成功 · 去重前 ${unique} 条`;
+  }
+  return `${roundCount} 轮查询`;
+}
+
+function roundStat(meta, round) {
+  return (meta.roundStats || []).find((item) => Number(item.round) === round);
+}
+
+function roundStatText(stat) {
+  if (!stat) return "待执行";
+  if (stat.error) return `错误：${stat.error}`;
+  return `取回 ${stat.retrievedCount ?? 0} · 新增 ${stat.newUniqueCount ?? 0}`;
 }
 
 // Removed legacy execution steps and insight functions to reduce code density and complexity as they are not needed for the new multi-page structure.
@@ -946,11 +1348,18 @@ function renderPapers(papers) {
   els.papers.innerHTML = "";
   els.papersEmpty.hidden = papers.length !== 0;
   if (!papers.length) {
+    renderPagination(papers);
     updateSelectionUi();
     return;
   }
 
-  papers.forEach((paper, index) => {
+  const totalPages = Math.ceil(papers.length / PAGE_SIZE);
+  const page = Math.min(state.currentPage, totalPages);
+  const start = (page - 1) * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, papers.length);
+  const pagePapers = papers.slice(start, end);
+
+  pagePapers.forEach((paper, index) => {
     const key = paperKey(paper);
     const node = els.paperTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.paperKey = key;
@@ -966,7 +1375,7 @@ function renderPapers(papers) {
       updateSelectionUi();
     });
 
-    node.querySelector(".paper-rank-badge").textContent = index === 0 ? "最佳" : "候选";
+    node.querySelector(".paper-rank-badge").textContent = start + index === 0 ? "最佳" : "候选";
     node.querySelector(".paper-source-label").textContent = paperDomainLabel(paper);
     node.querySelector(".paper-title").textContent = paper.title || "未命名文献";
     node.querySelector(".paper-authors").textContent =
@@ -980,11 +1389,12 @@ function renderPapers(papers) {
     addPaperMetric(metrics, "年份", paper.year || "暂无");
     addPaperMetric(metrics, "引用", paper.cited_by_count ?? "暂无");
     addPaperMetric(metrics, "OA", paper.oa_status || "未知");
-    addPaperMetric(
-      metrics,
-      "得分",
-      formatScore(paper.relevance_score ?? paper.score ?? null),
-    );
+
+    const score = paper.relevance_score ?? paper.score ?? null;
+    const relevanceTags = relevanceTagElements(paper, score);
+    if (relevanceTags) {
+      metrics.after(relevanceTags);
+    }
 
     const sources = (paper.sources || [paper.source]).filter(Boolean).map(sourceLabel);
     node.querySelector(".paper-meta-info").textContent = [
@@ -1009,8 +1419,62 @@ function renderPapers(papers) {
     els.papers.append(node);
   });
 
+  renderPagination(papers);
   updateSelectionUi();
 }
+
+function renderPagination(papers) {
+  let paginationEl = document.getElementById("pagination-controls");
+  if (!paginationEl) {
+    paginationEl = document.createElement("div");
+    paginationEl.id = "pagination-controls";
+    paginationEl.className = "pagination-bar";
+    els.papers.after(paginationEl);
+  }
+
+  const total = papers.length;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  if (totalPages <= 1) {
+    paginationEl.innerHTML = `<span class="pagination-info">共 ${total} 条</span>`;
+    return;
+  }
+
+  const page = Math.min(state.currentPage, totalPages);
+  let html = `<span class="pagination-info">共 ${total} 条，第 ${page}/${totalPages} 页</span><div class="pagination-buttons">`;
+
+  html += `<button type="button" class="pagination-btn" onclick="changePage(${page - 1})" ${page <= 1 ? "disabled" : ""}>‹ 上一页</button>`;
+
+  const maxVisible = 7;
+  let startPage = Math.max(1, page - Math.floor(maxVisible / 2));
+  let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+  if (endPage - startPage + 1 < maxVisible) {
+    startPage = Math.max(1, endPage - maxVisible + 1);
+  }
+
+  if (startPage > 1) {
+    html += `<button type="button" class="pagination-btn" onclick="changePage(1)">1</button>`;
+    if (startPage > 2) html += `<span class="pagination-ellipsis">…</span>`;
+  }
+
+  for (let i = startPage; i <= endPage; i++) {
+    html += `<button type="button" class="pagination-btn ${i === page ? "active" : ""}" onclick="changePage(${i})">${i}</button>`;
+  }
+
+  if (endPage < totalPages) {
+    if (endPage < totalPages - 1) html += `<span class="pagination-ellipsis">…</span>`;
+    html += `<button type="button" class="pagination-btn" onclick="changePage(${totalPages})">${totalPages}</button>`;
+  }
+
+  html += `<button type="button" class="pagination-btn" onclick="changePage(${page + 1})" ${page >= totalPages ? "disabled" : ""}>下一页 ›</button>`;
+  html += "</div>";
+  paginationEl.innerHTML = html;
+}
+
+window.changePage = function changePage(page) {
+  const totalPages = Math.ceil(state.visiblePapers.length / PAGE_SIZE);
+  state.currentPage = Math.max(1, Math.min(page, totalPages));
+  renderPapers(state.visiblePapers);
+};
 
 function paperDomainLabel(paper) {
   const venue = trimText((paper.venue || "Literature Pool").toUpperCase(), 22);
@@ -1049,6 +1513,7 @@ function applyResultControls() {
   }
   papers.sort((left, right) => sortPapers(left, right, sortBy));
   state.visiblePapers = papers;
+  state.currentPage = 1;
   renderPapers(papers);
   updateDashboard();
 }
@@ -1190,7 +1655,7 @@ function restoreWorkspaceSnapshot() {
   if (typeof snapshot.zhKeywords === "string") els.zhKeywords.value = snapshot.zhKeywords;
   if (typeof snapshot.enKeywords === "string") els.enKeywords.value = snapshot.enKeywords;
   if (typeof snapshot.limit !== "undefined" && snapshot.limit !== null) {
-    els.limit.value = snapshot.limit;
+    els.limit.value = normalizedCandidatePoolValue(snapshot.limit);
   }
   if (typeof snapshot.fromYear !== "undefined" && snapshot.fromYear !== null) {
     els.fromYear.value = snapshot.fromYear;
@@ -1624,19 +2089,57 @@ function renderArchiveDetail() {
       return `<li>${escapeHtml(fragments.join(" · "))}</li>`;
     })
     .join("");
-  const previewHtml = papers.length
-    ? papers
-        .slice(0, 5)
-        .map(
-          (paper) => `
-            <article class="archive-paper-preview">
-              <h5>${escapeHtml(paper.title || "未命名文献")}</h5>
-              <p>${escapeHtml((paper.authors || []).slice(0, 6).join(", ") || "作者信息待补")}</p>
-              <span>${escapeHtml(`${paper.year || "年份未知"} · ${(paper.venue || "来源待补")}`)}</span>
-            </article>
-          `,
-        )
-        .join("")
+
+  // Research questions
+  const questions = nonEmptyList(plan.research_questions);
+  const questionsHtml = questions.length
+    ? `<ul class="plan-question-list">${questions.slice(0, 6).map(q => `<li>${escapeHtml(q)}</li>`).join("")}</ul>`
+    : "";
+
+  // Search dimensions
+  const dims = Array.isArray(plan.search_dimensions) ? plan.search_dimensions.filter(Boolean) : [];
+  const dimsHtml = dims.length
+    ? dims.map(dim => {
+        const zhTerms = nonEmptyList(dim.zh_terms).slice(0, 8);
+        const enTerms = nonEmptyList(dim.en_terms).slice(0, 8);
+        const dimName = dim.name || "";
+        const dimNameEn = dim.name_en || "";
+        return `<div class="archive-dim-block">
+          <p class="archive-dim-title"><strong>${escapeHtml(dimName)}</strong>${dimNameEn ? ` <span class="dim-en-label">${escapeHtml(dimNameEn)}</span>` : ""}</p>
+          ${zhTerms.length ? `<div class="archive-chip-row">${zhTerms.map(t => `<span class="archive-chip">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+          ${enTerms.length ? `<div class="archive-chip-row" style="margin-top:4px">${enTerms.map(t => `<span class="archive-chip archive-chip-en">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+        </div>`;
+      }).join("")
+    : "";
+
+  // Query rounds
+  const queries = plan.queries || {};
+  const queryRounds = plan.query_rounds || {};
+  const querySources = Object.keys(queryRounds).length ? Object.keys(queryRounds) : Object.keys(queries);
+  const queriesHtml = querySources.length
+    ? querySources.map(src => {
+        const rounds = (queryRounds[src] || [queries[src]].filter(Boolean)).slice(0, 4);
+        if (!rounds.length) return "";
+        return `<div class="archive-query-block">
+          <p class="archive-dim-title"><strong>${escapeHtml(sourceLabel(src))}</strong> <span class="dim-en-label">${rounds.length} 轮</span></p>
+          <ol class="archive-query-list">${rounds.map((q, i) => `<li><code>${escapeHtml(q.slice(0, 120))}${q.length > 120 ? "…" : ""}</code></li>`).join("")}</ol>
+        </div>`;
+      }).join("")
+    : "";
+
+  // Papers list (all papers, not just 5)
+  const papersHtml = papers.length
+    ? papers.map((paper, i) => `
+        <article class="archive-paper-preview">
+          <span class="archive-paper-index">#${i + 1}</span>
+          <div class="archive-paper-body">
+            <h5>${escapeHtml(paper.title || "未命名文献")}</h5>
+            <p>${escapeHtml((paper.authors || []).slice(0, 6).join(", ") || "作者信息待补")}</p>
+            <span>${escapeHtml(`${paper.year || "年份未知"} · ${(paper.venue || "来源待补")}`)}</span>
+          </div>
+          ${paper.relevance_score != null ? `<span class="archive-paper-score">${Math.round(paper.relevance_score * 100)}%</span>` : ""}
+        </article>
+      `).join("")
     : '<p class="history-item-meta">暂无结果摘要。</p>';
 
   els.archiveDetail.innerHTML = `
@@ -1678,11 +2181,13 @@ function renderArchiveDetail() {
         <h4>检索条件</h4>
         <ul class="archive-detail-list">
           <li>起始年份：${escapeHtml(formatArchiveField(entry.fromYear))}</li>
-          <li>每源条数：${escapeHtml(formatArchiveField(entry.limit))}</li>
+          <li>候选池规模/源：${escapeHtml(formatArchiveField(entry.limit))}</li>
           <li>优先最新/高被引：${escapeHtml(formatArchiveBoolean(entry.preferRecent))}</li>
           <li>AI 优化检索词：${escapeHtml(formatArchiveBoolean(entry.useLlm))}</li>
         </ul>
       </section>
+      ${questionsHtml ? `<section class="archive-detail-section"><h4>研究问题</h4>${questionsHtml}</section>` : ""}
+      ${dimsHtml ? `<section class="archive-detail-section archive-detail-dims"><h4>检索维度拆解</h4>${dimsHtml}</section>` : ""}
       <section class="archive-detail-section">
         <h4>检索方案</h4>
         <ul class="archive-detail-list">
@@ -1690,6 +2195,7 @@ function renderArchiveDetail() {
           ${!Array.isArray(plan.search_strategy) || !plan.search_strategy.length ? "<li>暂无方案说明。</li>" : ""}
         </ul>
       </section>
+      ${queriesHtml ? `<section class="archive-detail-section archive-detail-queries"><h4>分库检索式</h4>${queriesHtml}</section>` : ""}
       <section class="archive-detail-section">
         <h4>来源与模型</h4>
         <ul class="archive-detail-list">
@@ -1699,8 +2205,8 @@ function renderArchiveDetail() {
         </ul>
       </section>
       <section class="archive-detail-section full-width">
-        <h4>结果摘要</h4>
-        <div class="archive-paper-preview-list">${previewHtml}</div>
+        <h4>结果摘要（${papers.length} 篇）</h4>
+        <div class="archive-paper-preview-list">${papersHtml}</div>
       </section>
     </div>
   `;
@@ -1794,7 +2300,9 @@ function applyHistoryPayload(payload = {}) {
   } else if (typeof enKeywords === "string") {
     els.enKeywords.value = enKeywords;
   }
-  if (typeof payload.limit !== "undefined" && payload.limit !== null) els.limit.value = payload.limit;
+  if (typeof payload.limit !== "undefined" && payload.limit !== null) {
+    els.limit.value = normalizedCandidatePoolValue(payload.limit);
+  }
   if (typeof payload.fromYear !== "undefined" && payload.fromYear !== null) els.fromYear.value = payload.fromYear;
   if (typeof payload.preferRecent !== "undefined") els.preferRecent.checked = Boolean(payload.preferRecent);
   if (typeof payload.useLlm !== "undefined") els.useLlm.checked = Boolean(payload.useLlm);
@@ -1808,6 +2316,16 @@ function applyHistoryPayload(payload = {}) {
   updateSearchSettingsSummary();
   updateDashboard();
   persistWorkspaceSnapshot();
+}
+
+function candidatePoolLimit() {
+  return normalizedCandidatePoolValue(els.limit.value);
+}
+
+function normalizedCandidatePoolValue(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 20) return DEFAULT_CANDIDATE_POOL_SIZE;
+  return Math.max(1, Math.min(200, Math.round(parsed)));
 }
 
 function formatSources(sources) {
@@ -1906,6 +2424,41 @@ function semanticStatusNote(meta) {
   if (meta.warningMessage) return meta.warningMessage;
   if (meta.usedCache) return "Semantic Scholar 使用了本地缓存结果。";
   return "";
+}
+
+function relevanceTagElements(paper, score) {
+  const reasons = paper.relevance_reasons;
+  if ((!reasons || !reasons.length) && score === null) return null;
+
+  const container = document.createElement("div");
+  container.className = "paper-relevance-tags";
+
+  // Add relevance score badge
+  if (score !== null) {
+    const scoreTag = document.createElement("span");
+    const scoreClass = score >= 6 ? "high" : score >= 3 ? "medium" : "low";
+    scoreTag.className = `paper-relevance-tag paper-relevance-score ${scoreClass}`;
+    scoreTag.textContent = `得分 ${Number(score).toFixed(1)}`;
+    container.append(scoreTag);
+  }
+
+  // Add reason tags
+  if (reasons && reasons.length) {
+    for (const reason of reasons) {
+      const tag = document.createElement("span");
+      tag.className = "paper-relevance-tag";
+      if (reason.includes("核心技术")) tag.classList.add("tech");
+      else if (reason.includes("研究对象")) tag.classList.add("population");
+      else if (reason.includes("核心现象")) tag.classList.add("phenomenon");
+      else if (reason.includes("交叉匹配") || reason.includes("综合匹配")) tag.classList.add("bonus");
+      else if (reason.includes("降权") || reason.includes("惩罚") || reason.includes("强降权")) tag.classList.add("penalty");
+      const label = reason.replace(/\([^)]*\)/, "").replace(/:\d+$/, "");
+      tag.textContent = label;
+      container.append(tag);
+    }
+  }
+
+  return container;
 }
 
 function addLink(parent, label, href) {

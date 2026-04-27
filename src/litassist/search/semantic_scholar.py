@@ -90,27 +90,46 @@ class SemanticScholarSearcher(Searcher):
         )
 
     def search_items(self, query: str, limit: int) -> list[dict[str, Any]]:
-        params = {
-            "query": query,
-            "limit": min(limit, 100),
-            "fields": ",".join(self.FIELDS),
-        }
-        if self.general.from_year:
-            params["year"] = f"{self.general.from_year}-{date.today().year}"
+        fields = ",".join(self.FIELDS)
         headers = {"User-Agent": self.general.user_agent}
         if self.config.api_key:
             headers["x-api-key"] = self.config.api_key
+
+        page_limit = min(limit, 100)
+        offset = 0
+        all_data: list[dict[str, Any]] = []
 
         try:
             with httpx.Client(
                 timeout=self.general.request_timeout_seconds, headers=headers
             ) as client:
-                response = client.get(
-                    "https://api.semanticscholar.org/graph/v1/paper/search",
-                    params=params,
-                )
-                response.raise_for_status()
-                payload = response.json()
+                while len(all_data) < limit:
+                    params: dict[str, Any] = {
+                        "query": query,
+                        "limit": page_limit,
+                        "offset": offset,
+                        "fields": fields,
+                    }
+                    if self.general.from_year:
+                        params["year"] = f"{self.general.from_year}-{date.today().year}"
+
+                    response = client.get(
+                        "https://api.semanticscholar.org/graph/v1/paper/search",
+                        params=params,
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+
+                    data = payload.get("data", [])
+                    if not isinstance(data, list) or not data:
+                        break
+
+                    for item in data:
+                        all_data.append(item)
+                        if len(all_data) >= limit:
+                            break
+
+                    offset += len(data)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429 and not self.config.api_key:
                 raise SearchError(
@@ -121,8 +140,7 @@ class SemanticScholarSearcher(Searcher):
         except httpx.HTTPError as exc:
             raise SearchError(f"Semantic Scholar request failed: {exc}") from exc
 
-        data = payload.get("data", [])
-        return data if isinstance(data, list) else []
+        return all_data
 
     def _to_paper(self, item: dict[str, Any]) -> Paper:
         external_ids = item.get("externalIds") or {}

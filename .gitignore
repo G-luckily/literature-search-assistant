@@ -7,3 +7,12 @@ output/playwright/
 .playwright-cli/
 config.toml
 .env
+
+# Dev & test artifacts
+node_modules/
+.playwright-mcp/
+test-screenshots/
+test-results/
+*.png
+"测试图片/"
+.claude/

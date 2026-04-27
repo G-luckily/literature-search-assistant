@@ -14,11 +14,11 @@ class GeneralConfig:
     contact_email: str = ""
     user_agent: str = "literature-search-assistant/0.1"
     request_timeout_seconds: float = 20
-    max_results_per_source: int = 20
+    max_results_per_source: int = 500
     from_year: int | None = field(default_factory=lambda: date.today().year - 4)
     prefer_recent: bool = True
     enabled_sources: list[str] = field(
-        default_factory=lambda: ["openalex", "crossref"]
+        default_factory=lambda: ["openalex", "crossref", "semantic_scholar"]
     )
 
 
@@ -64,7 +64,9 @@ class ZoteroConfig:
 @dataclass(slots=True)
 class AppConfig:
     general: GeneralConfig = field(default_factory=GeneralConfig)
-    semantic_scholar: SemanticScholarConfig = field(default_factory=SemanticScholarConfig)
+    semantic_scholar: SemanticScholarConfig = field(
+        default_factory=SemanticScholarConfig
+    )
     web_of_science: WebOfScienceConfig = field(default_factory=WebOfScienceConfig)
     google_scholar: GoogleScholarConfig = field(default_factory=GoogleScholarConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)

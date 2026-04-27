@@ -18,33 +18,46 @@ class OpenAlexSearcher(Searcher):
         self.config = config
 
     def search(self, query: str, limit: int) -> list[Paper]:
-        params: dict[str, Any] = {
+        # Build stable filter/query params (not pagination-related)
+        shared_params: dict[str, Any] = {
             "search": query,
-            "per-page": min(limit, 200),
             "sort": "relevance_score:desc",
         }
         if self.config.from_year:
-            params["filter"] = ",".join(
+            shared_params["filter"] = ",".join(
                 [
                     f"from_publication_date:{self.config.from_year}-01-01",
                     f"to_publication_date:{date.today().year}-12-31",
                 ]
             )
         if self.config.contact_email:
-            params["mailto"] = self.config.contact_email
+            shared_params["mailto"] = self.config.contact_email
 
         headers = {"User-Agent": self.config.user_agent}
+        per_page = min(limit, 200)
+        cursor = "*"
+        papers: list[Paper] = []
+
         try:
             with httpx.Client(
                 timeout=self.config.request_timeout_seconds, headers=headers
             ) as client:
-                response = client.get("https://api.openalex.org/works", params=params)
-                response.raise_for_status()
-                payload = response.json()
+                while len(papers) < limit and cursor:
+                    params = dict(shared_params, per_page=per_page, cursor=cursor)
+                    response = client.get(
+                        "https://api.openalex.org/works", params=params
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    for item in payload.get("results", []):
+                        papers.append(self._to_paper(item))
+                        if len(papers) >= limit:
+                            break
+                    cursor = (payload.get("meta") or {}).get("next_cursor")
         except httpx.HTTPError as exc:
             raise SearchError(f"OpenAlex request failed: {exc}") from exc
 
-        return [self._to_paper(item) for item in payload.get("results", [])]
+        return papers
 
     def _to_paper(self, item: dict[str, Any]) -> Paper:
         title = item.get("display_name") or "Untitled"
@@ -56,10 +69,9 @@ class OpenAlexSearcher(Searcher):
         ]
         location = item.get("primary_location") or {}
         best_oa = item.get("best_oa_location") or {}
-        venue = (
-            (location.get("source") or {}).get("display_name")
-            or (best_oa.get("source") or {}).get("display_name")
-        )
+        venue = (location.get("source") or {}).get("display_name") or (
+            best_oa.get("source") or {}
+        ).get("display_name")
         url = (
             location.get("landing_page_url")
             or best_oa.get("landing_page_url")

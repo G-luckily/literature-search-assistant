@@ -25,30 +25,54 @@ class GoogleScholarSearcher(Searcher):
                 "Add a SerpApi key in Source 配置 or disable this source."
             )
 
-        params: dict[str, Any] = {
-            "engine": "google_scholar",
-            "q": query,
-            "api_key": self.config.api_key,
-            "num": min(limit, 20),
-        }
-        if self.general.from_year:
-            params["as_ylo"] = self.general.from_year
-            params["as_yhi"] = date.today().year
-
         headers = {"User-Agent": self.general.user_agent}
+        num = min(limit, 20)
+        start = 0
+        papers: list[Paper] = []
+
         try:
             with httpx.Client(
                 timeout=self.general.request_timeout_seconds, headers=headers
             ) as client:
-                response = client.get(self.config.endpoint, params=params)
-                response.raise_for_status()
-                payload = response.json()
-        except httpx.HTTPError as exc:
-            raise SearchError(f"Google Scholar via SerpApi request failed: {exc}") from exc
+                while len(papers) < limit:
+                    params: dict[str, Any] = {
+                        "engine": "google_scholar",
+                        "q": query,
+                        "api_key": self.config.api_key,
+                        "num": num,
+                        "start": start,
+                    }
+                    if self.general.from_year:
+                        params["as_ylo"] = self.general.from_year
+                        params["as_yhi"] = date.today().year
 
-        if payload.get("error"):
-            raise SearchError(f"Google Scholar via SerpApi failed: {payload['error']}")
-        return [self._to_paper(item) for item in payload.get("organic_results", [])]
+                    response = client.get(self.config.endpoint, params=params)
+                    response.raise_for_status()
+                    payload = response.json()
+
+                    if payload.get("error"):
+                        raise SearchError(
+                            f"Google Scholar via SerpApi failed: {payload['error']}"
+                        )
+
+                    items = payload.get("organic_results", [])
+                    if not items:
+                        break
+
+                    for item in items:
+                        papers.append(self._to_paper(item))
+                        if len(papers) >= limit:
+                            break
+
+                    if len(items) < num:
+                        break
+                    start += len(items)
+        except httpx.HTTPError as exc:
+            raise SearchError(
+                f"Google Scholar via SerpApi request failed: {exc}"
+            ) from exc
+
+        return papers
 
     def _to_paper(self, item: dict[str, Any]) -> Paper:
         publication_info = item.get("publication_info") or {}

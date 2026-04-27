@@ -46,6 +46,11 @@ def render_markdown(run: SearchRun) -> str:
     ]
     for source, query in plan.queries.items():
         lines.append(f"- `{source}`: {query}")
+        for round_index, round_query in enumerate(
+            plan.query_rounds.get(source, [])[1:],
+            start=2,
+        ):
+            lines.append(f"- `{source}` expansion {round_index}: {round_query}")
 
     if plan.research_questions:
         lines.extend(["", "## Research Questions", ""])
@@ -84,16 +89,10 @@ def render_markdown(run: SearchRun) -> str:
     if run.source_meta:
         lines.extend(["", "## Source Metadata", ""])
         for source, meta in run.source_meta.items():
-            fragments = [f"`{source}`"]
-            if meta.get("budget_status"):
-                fragments.append(f"status={meta['budget_status']}")
-            if meta.get("remaining_this_month") is not None:
-                fragments.append(f"remaining={meta['remaining_this_month']}")
-            if meta.get("used_cache"):
-                fragments.append("cache=hit")
-            if meta.get("warning_message"):
-                fragments.append(meta["warning_message"])
-            lines.append("- " + " | ".join(fragments))
+            lines.append(_source_meta_line(source, meta))
+            for round_meta in meta.get("round_stats", []):
+                if isinstance(round_meta, dict):
+                    lines.append(_source_round_line(source, round_meta))
 
     lines.extend(["", "## Results", "", f"Total after dedupe: {len(run.papers)}", ""])
     for index, paper in enumerate(run.papers, start=1):
@@ -132,3 +131,40 @@ def _paper_lines(index: int, paper: Paper) -> list[str]:
     if paper.abstract:
         lines.extend(["Abstract:", "", paper.abstract[:1200], ""])
     return lines
+
+
+def _source_meta_line(source: str, meta: dict[str, object]) -> str:
+    fragments = [f"`{source}`"]
+    query_round_count = meta.get("query_round_count")
+    if query_round_count is not None:
+        fragments.append(
+            f"rounds={meta.get('successful_rounds', 0)}/{query_round_count}"
+        )
+    if meta.get("retrieved_before_dedupe") is not None:
+        fragments.append(f"retrieved={meta['retrieved_before_dedupe']}")
+    if meta.get("unique_before_dedupe") is not None:
+        fragments.append(f"unique={meta['unique_before_dedupe']}")
+    if meta.get("budget_status"):
+        fragments.append(f"status={meta['budget_status']}")
+    if meta.get("remaining_this_month") is not None:
+        fragments.append(f"remaining={meta['remaining_this_month']}")
+    if meta.get("used_cache"):
+        fragments.append("cache=hit")
+    if meta.get("warning_message"):
+        fragments.append(str(meta["warning_message"]))
+    return "- " + " | ".join(fragments)
+
+
+def _source_round_line(source: str, round_meta: dict[str, object]) -> str:
+    fragments = [f"`{source}` round {round_meta.get('round', '?')}"]
+    if round_meta.get("limit") is not None:
+        fragments.append(f"limit={round_meta['limit']}")
+    if round_meta.get("retrieved_count") is not None:
+        fragments.append(f"hits={round_meta['retrieved_count']}")
+    if round_meta.get("new_unique_count") is not None:
+        fragments.append(f"new={round_meta['new_unique_count']}")
+    if round_meta.get("cumulative_unique_count") is not None:
+        fragments.append(f"cumulative={round_meta['cumulative_unique_count']}")
+    if round_meta.get("error"):
+        fragments.append(f"error={round_meta['error']}")
+    return "- " + " | ".join(fragments)

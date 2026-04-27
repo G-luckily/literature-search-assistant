@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> None:
     search_parser.add_argument(
         "--no-prefer-recent",
         action="store_true",
-        help="Use source relevance ranking instead of newest-first source queries.",
+        help="Prefer relevance-first result ordering instead of recent-first ranking.",
     )
     search_parser.add_argument(
         "--source",
@@ -146,3 +146,7 @@ def _add_keyword_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="English keyword override/addition. Can be repeated.",
     )
+
+
+if __name__ == "__main__":
+    main()

@@ -48,23 +48,28 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path == "/api/health":
-            self._json({"ok": True})
-            return
-        if parsed.path == "/api/config":
-            self._json(self._config_payload())
-            return
-        if parsed.path == "/api/archive":
-            self._handle_archive_list()
-            return
-        if parsed.path.startswith("/api/archive/"):
-            run_id = parsed.path.removeprefix("/api/archive/")
-            self._handle_archive_detail(run_id)
-            return
-        if parsed.path.startswith("/runs/"):
-            self._serve_project_file(parsed.path)
-            return
-        self._serve_static(parsed.path)
+        try:
+            if parsed.path == "/api/health":
+                self._json({"ok": True})
+                return
+            if parsed.path == "/api/config":
+                self._json(self._config_payload())
+                return
+            if parsed.path == "/api/archive":
+                self._handle_archive_list()
+                return
+            if parsed.path.startswith("/api/archive/"):
+                run_id = parsed.path.removeprefix("/api/archive/")
+                self._handle_archive_detail(run_id)
+                return
+            if parsed.path.startswith("/runs/"):
+                self._serve_project_file(parsed.path)
+                return
+            self._serve_static(parsed.path)
+        except ValueError as exc:
+            self._json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self._json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -94,40 +99,49 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_plan(self, payload: dict[str, Any]) -> None:
         need = _required_text(payload, "need")
+        use_llm = _optional_bool(payload, "useLlm")
         plan = _build_search_plan(
             need,
             config=self.server.config,
             zh_keywords=_list_of_text(payload.get("zhKeywords")),
             en_keywords=_list_of_text(payload.get("enKeywords")),
-            use_llm=bool(payload.get("useLlm")),
+            use_llm=use_llm,
         )
         self._json({"plan": plan.to_dict()})
 
     def _handle_search(self, payload: dict[str, Any]) -> None:
         need = _required_text(payload, "need")
         sources = _list_of_text(payload.get("sources"))
+        selected_sources = sources or list(self.server.config.general.enabled_sources)
         limit = int(
             payload.get("limit") or self.server.config.general.max_results_per_source
         )
-        limit = max(1, min(limit, 50))
+        limit = max(1, min(limit, 1000))
         from_year = _optional_int(payload, "fromYear")
+        prefer_recent = _optional_bool(payload, "preferRecent")
+        use_llm = _optional_bool(payload, "useLlm")
         created_at = datetime.now()
         run = run_search(
             need,
             config=self.server.config,
-            sources=sources or None,
+            sources=selected_sources,
             limit=limit,
             zh_keywords=_list_of_text(payload.get("zhKeywords")),
             en_keywords=_list_of_text(payload.get("enKeywords")),
-            use_llm=bool(payload.get("useLlm")),
+            use_llm=use_llm,
             from_year=from_year,
-            prefer_recent=(
-                bool(payload["preferRecent"]) if "preferRecent" in payload else None
-            ),
+            prefer_recent=prefer_recent,
             state_root=self.server.project_root,
         )
-        run_id = created_at.strftime("%Y%m%d-%H%M%S")
-        out_dir = self.server.project_root / "runs" / "web" / run_id
+        run_id, out_dir = _reserve_archive_run_dir(self.server.project_root, created_at)
+        effective_prefer_recent = (
+            self.server.config.general.prefer_recent
+            if prefer_recent is None
+            else prefer_recent
+        )
+        effective_use_llm = (
+            self.server.config.llm.enabled if use_llm is None else use_llm
+        )
         write_run(run, out_dir)
         write_json(
             out_dir / "run_meta.json",
@@ -135,15 +149,11 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 "id": run_id,
                 "createdAt": created_at.isoformat(),
                 "need": need,
-                "sources": sources or list(run.plan.queries.keys()),
+                "sources": selected_sources,
                 "limit": limit,
                 "fromYear": from_year,
-                "preferRecent": (
-                    bool(payload["preferRecent"])
-                    if "preferRecent" in payload
-                    else None
-                ),
-                "useLlm": bool(payload.get("useLlm")),
+                "preferRecent": effective_prefer_recent,
+                "useLlm": effective_use_llm,
                 "status": "partial" if run.errors else "success",
                 "errors": run.errors,
                 "paperCount": len(run.papers),
@@ -220,7 +230,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         api_key = payload.get("apiKey")
         if api_key is not None and not isinstance(api_key, str):
             raise ValueError("apiKey must be text")
-        clear_api_key = bool(payload.get("clearApiKey"))
+        enabled = _optional_bool(payload, "enabled")
+        clear_api_key = _optional_bool(payload, "clearApiKey") or False
 
         timeout = payload.get("requestTimeoutSeconds")
         timeout_seconds = (
@@ -232,7 +243,6 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             raise ValueError("requestTimeoutSeconds must be positive")
 
         values: dict[str, Any] = {
-            "enabled": bool(payload.get("enabled")),
             "provider": provider,
             "model": _optional_text(payload, "model", default=_default_model(provider)),
             "endpoint": _optional_text(
@@ -242,6 +252,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             ),
             "request_timeout_seconds": timeout_seconds,
         }
+        if enabled is not None:
+            values["enabled"] = enabled
         if clear_api_key:
             values["api_key"] = ""
         elif api_key and api_key.strip():
@@ -258,10 +270,10 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         from_year = _optional_int(payload, "fromYear")
         if from_year is not None and not 1900 <= from_year <= 2100:
             raise ValueError("fromYear must be between 1900 and 2100")
+        prefer_recent = _optional_bool(payload, "preferRecent")
 
         values: dict[str, Any] = {
             "from_year": from_year,
-            "prefer_recent": bool(payload.get("preferRecent")),
             "semantic_scholar": {
                 **_api_key_update(payload, "semanticScholar"),
                 **_numeric_updates(
@@ -277,6 +289,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             "web_of_science": _api_key_update(payload, "webOfScience"),
             "google_scholar": _api_key_update(payload, "googleScholar"),
         }
+        if prefer_recent is not None:
+            values["prefer_recent"] = prefer_recent
         _validate_semantic_budget_updates(
             values["semantic_scholar"],
             self.server.config.semantic_scholar,
@@ -303,6 +317,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             "general": {
                 "fromYear": general.from_year,
                 "preferRecent": general.prefer_recent,
+                "maxResultsPerSource": general.max_results_per_source,
+                "enabledSources": list(general.enabled_sources),
             },
             "llm": {
                 "enabled": llm.enabled,
@@ -351,7 +367,9 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         }
 
     def _serve_static(self, request_path: str) -> None:
-        relative = "index.html" if request_path in {"", "/"} else request_path.lstrip("/")
+        relative = (
+            "index.html" if request_path in {"", "/"} else request_path.lstrip("/")
+        )
         relative = unquote(relative)
         target = (STATIC_DIR / relative).resolve()
         static_root = STATIC_DIR.resolve()
@@ -360,7 +378,9 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             return
         if not target.exists() or not target.is_file():
             target = STATIC_DIR / "index.html"
-        content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        content_type = (
+            mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        )
         data = target.read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
@@ -369,10 +389,10 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _serve_project_file(self, request_path: str) -> None:
-        relative = unquote(request_path.lstrip("/"))
-        target = (self.server.project_root / relative).resolve()
-        root = self.server.project_root.resolve()
-        if root not in target.parents and target != root:
+        relative = unquote(request_path.removeprefix("/runs/"))
+        runs_root = _runs_root(self.server.project_root)
+        target = (runs_root / relative).resolve()
+        if runs_root not in target.parents and target != runs_root:
             self._json({"error": "Invalid path"}, status=HTTPStatus.BAD_REQUEST)
             return
         if not target.exists() or not target.is_file():
@@ -396,7 +416,9 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             raise ValueError("JSON body must be an object")
         return data
 
-    def _json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
+    def _json(
+        self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK
+    ) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -470,6 +492,21 @@ def _optional_int(payload: dict[str, Any], key: str) -> int | None:
         raise ValueError(f"{key} must be an integer") from exc
 
 
+def _optional_bool(payload: dict[str, Any], key: str) -> bool | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError(f"{key} must be a boolean")
+
+
 def _api_key_update(payload: dict[str, Any], prefix: str) -> dict[str, str | None]:
     api_key_field = f"{prefix}ApiKey"
     clear_field = f"clear{prefix[0].upper()}{prefix[1:]}ApiKey"
@@ -495,7 +532,9 @@ def _numeric_updates(
     return result
 
 
-def _serialize_source_meta(source_meta: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def _serialize_source_meta(
+    source_meta: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
     serialized: dict[str, dict[str, Any]] = {}
     for source, meta in source_meta.items():
         serialized[source] = {
@@ -503,12 +542,81 @@ def _serialize_source_meta(source_meta: dict[str, dict[str, Any]]) -> dict[str, 
             "budgetStatus": meta.get("budget_status") or "",
             "remainingThisMonth": meta.get("remaining_this_month"),
             "warningMessage": meta.get("warning_message") or "",
+            "queryRoundCount": meta.get("query_round_count")
+            if meta.get("query_round_count") is not None
+            else len(meta.get("query_rounds") or []),
+            "successfulRounds": meta.get("successful_rounds", 0),
+            "retrievedBeforeDedupe": meta.get("retrieved_before_dedupe"),
+            "uniqueBeforeDedupe": _serialized_unique_before_dedupe(meta),
+            "queryRounds": list(meta.get("query_rounds") or []),
+            "roundErrors": [
+                _serialize_round_error(item)
+                for item in meta.get("round_errors") or []
+                if isinstance(item, dict)
+            ],
+            "roundStats": [
+                _serialize_round_stat(item)
+                for item in meta.get("round_stats") or []
+                if isinstance(item, dict)
+            ],
         }
     return serialized
 
 
+def _serialized_unique_before_dedupe(meta: dict[str, Any]) -> Any:
+    if meta.get("unique_before_dedupe") is not None:
+        return meta.get("unique_before_dedupe")
+    for item in reversed(meta.get("round_stats") or []):
+        if isinstance(item, dict) and item.get("cumulative_unique_count") is not None:
+            return item.get("cumulative_unique_count")
+    return None
+
+
+def _serialize_round_error(meta: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "round": meta.get("round"),
+        "query": meta.get("query") or "",
+        "error": meta.get("error") or "",
+    }
+
+
+def _serialize_round_stat(meta: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "round": meta.get("round"),
+        "query": meta.get("query") or "",
+        "limit": meta.get("limit"),
+        "retrievedCount": meta.get("retrieved_count", 0),
+        "newUniqueCount": meta.get("new_unique_count", 0),
+        "cumulativeUniqueCount": meta.get("cumulative_unique_count", 0),
+        "error": meta.get("error") or "",
+    }
+
+
 def _archive_root(project_root: Path) -> Path:
-    return (project_root / "runs" / "web").resolve()
+    return (_runs_root(project_root) / "web").resolve()
+
+
+def _runs_root(project_root: Path) -> Path:
+    return (project_root / "runs").resolve()
+
+
+def _reserve_archive_run_dir(
+    project_root: Path,
+    created_at: datetime,
+) -> tuple[str, Path]:
+    archive_root = _archive_root(project_root)
+    archive_root.mkdir(parents=True, exist_ok=True)
+    base_run_id = created_at.strftime("%Y%m%d-%H%M%S")
+    suffix = 1
+    while True:
+        run_id = base_run_id if suffix == 1 else f"{base_run_id}-{suffix}"
+        run_dir = archive_root / run_id
+        try:
+            run_dir.mkdir()
+        except FileExistsError:
+            suffix += 1
+            continue
+        return run_id, run_dir
 
 
 def _resolve_archive_dir(project_root: Path, run_id: str) -> Path:
@@ -525,7 +633,13 @@ def _load_archive_summary(run_dir: Path) -> dict[str, Any] | None:
         return None
     meta = _read_json_file(run_dir / "run_meta.json")
     papers = _read_json_file(run_dir / "papers.json")
-    paper_count = len(papers) if isinstance(papers, list) else int(meta.get("paperCount") or 0) if isinstance(meta, dict) else 0
+    paper_count = (
+        len(papers)
+        if isinstance(papers, list)
+        else int(meta.get("paperCount") or 0)
+        if isinstance(meta, dict)
+        else 0
+    )
     return {
         "id": run_dir.name,
         "title": _archive_title(plan.get("need")),

@@ -46,3 +46,30 @@ def test_dedupe_ranking_keeps_zero_relevance_below_matches():
     ]
 
     assert dedupe_papers(papers)[0].title == "Relevant paper"
+
+
+def test_dedupe_can_prioritize_relevance_when_recent_bias_disabled():
+    papers = [
+        Paper(
+            title="Newer but weakly matched paper",
+            source="openalex",
+            year=2025,
+            relevance_score=1,
+        ),
+        Paper(
+            title="Older but strongly matched paper",
+            source="crossref",
+            year=2021,
+            relevance_score=5,
+            cited_by_count=100,
+        ),
+    ]
+
+    assert (
+        dedupe_papers(papers, prefer_recent=True)[0].title
+        == "Newer but weakly matched paper"
+    )
+    assert (
+        dedupe_papers(papers, prefer_recent=False)[0].title
+        == "Older but strongly matched paper"
+    )

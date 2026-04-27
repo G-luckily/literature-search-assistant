@@ -10,6 +10,7 @@ class ResearchPlan:
     zh_keywords: list[str]
     en_keywords: list[str]
     queries: dict[str, str]
+    query_rounds: dict[str, list[str]] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     planner: str = "rules"
     research_questions: list[str] = field(default_factory=list)
@@ -17,6 +18,7 @@ class ResearchPlan:
     inclusion_criteria: list[str] = field(default_factory=list)
     exclusion_criteria: list[str] = field(default_factory=list)
     search_strategy: list[str] = field(default_factory=list)
+    search_dimensions: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

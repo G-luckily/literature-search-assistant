@@ -6,6 +6,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from .config import SemanticScholarConfig
@@ -13,6 +14,7 @@ from .models import SourceMeta
 
 
 API_VERSION = "graph/v1/paper/search"
+STATE_IO_LOCK = Lock()
 
 
 @dataclass(slots=True)
@@ -60,10 +62,16 @@ def load_cached_results(
     now: datetime | None = None,
 ) -> list[dict[str, Any]] | None:
     cache_path = _cache_dir(state_root) / f"{cache_key}.json"
-    if not cache_path.exists():
+    payload = _read_json_object(cache_path)
+    if payload is None:
         return None
-    payload = json.loads(cache_path.read_text(encoding="utf-8"))
-    created_at = datetime.fromisoformat(payload.get("created_at"))
+    created_at_raw = payload.get("created_at")
+    if not isinstance(created_at_raw, str):
+        return None
+    try:
+        created_at = datetime.fromisoformat(created_at_raw)
+    except ValueError:
+        return None
     current = now or datetime.now()
     if current - created_at > timedelta(days=ttl_days):
         return None
@@ -78,13 +86,12 @@ def save_cached_results(
     now: datetime | None = None,
 ) -> None:
     cache_dir = _cache_dir(state_root)
-    cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / f"{cache_key}.json"
     payload = {
         "created_at": (now or datetime.now()).isoformat(),
         "results": results,
     }
-    cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_json_object(cache_path, payload)
 
 
 def get_budget_state(
@@ -120,13 +127,13 @@ def record_successful_search(
 ) -> None:
     current = today or date.today()
     month_key = _month_key(current)
-    usage = _load_usage(state_root)
-    if usage.get("month") != month_key:
-        usage = {"month": month_key, "used": 0}
-    usage["used"] = int(usage.get("used", 0)) + 1
     usage_path = _usage_path(state_root)
-    usage_path.parent.mkdir(parents=True, exist_ok=True)
-    usage_path.write_text(json.dumps(usage, ensure_ascii=False, indent=2), encoding="utf-8")
+    with STATE_IO_LOCK:
+        usage = _load_usage_unlocked(usage_path)
+        if usage.get("month") != month_key:
+            usage = {"month": month_key, "used": 0}
+        usage["used"] = int(usage.get("used", 0)) + 1
+        _write_json_object_unlocked(usage_path, usage)
 
 
 def build_source_meta(
@@ -173,9 +180,48 @@ def _usage_path(state_root: str | Path) -> Path:
 
 def _load_usage(state_root: str | Path) -> dict[str, Any]:
     usage_path = _usage_path(state_root)
-    if not usage_path.exists():
-        return {}
-    return json.loads(usage_path.read_text(encoding="utf-8"))
+    with STATE_IO_LOCK:
+        return _load_usage_unlocked(usage_path)
+
+
+def _load_usage_unlocked(usage_path: Path) -> dict[str, Any]:
+    payload = _read_json_object_unlocked(usage_path)
+    return payload or {}
+
+
+def _read_json_object(path: Path) -> dict[str, Any] | None:
+    with STATE_IO_LOCK:
+        return _read_json_object_unlocked(path)
+
+
+def _read_json_object_unlocked(path: Path) -> dict[str, Any] | None:
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _write_json_object(path: Path, payload: dict[str, Any]) -> None:
+    with STATE_IO_LOCK:
+        _write_json_object_unlocked(path, payload)
+
+
+def _write_json_object_unlocked(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.tmp")
+    serialized = json.dumps(payload, ensure_ascii=False, indent=2)
+    try:
+        temp_path.write_text(serialized, encoding="utf-8")
+        temp_path.replace(path)
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
 
 
 def _month_key(today: date) -> str:

@@ -1,3 +1,12 @@
+---
+title: Literature Search Assistant
+emoji: 🏃
+colorFrom: yellow
+colorTo: yellow
+sdk: docker
+pinned: false
+---
+
 # Literature Search Assistant
 
 一个面向 Zotero 的文献检索 MVP：输入研究需求，生成中英文关键词和数据库检索式，调用开放学术 API 检索文献，去重、排序、导出报告，并可导入 Zotero。

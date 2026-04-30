@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import shutil
 import socket
@@ -12,6 +13,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+logger = logging.getLogger(__name__)
+
+from . import db
 from .config import (
     AppConfig,
     load_config,
@@ -115,7 +119,7 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             self._json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def log_message(self, format: str, *args: Any) -> None:
-        print(f"[web] {self.address_string()} - {format % args}")
+        logger.info("%s - %s", self.address_string(), format % args)
 
     # ── Route handlers ───────────────────────────────────────────
 
@@ -195,6 +199,25 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 "paperCount": len(run.papers),
             },
         )
+        # Persist archive metadata in SQLite
+        db.init(self.server.project_root / "runs" / "litassist.db")
+        db.archive_save(
+            run_id=run_id,
+            need=need,
+            status="partial" if run.errors else "success",
+            sources=selected_sources,
+            zh_keywords=list_of_text(payload.get("zhKeywords")),
+            en_keywords=list_of_text(payload.get("enKeywords")),
+            from_year=from_year,
+            limit_count=limit,
+            prefer_recent=effective_prefer_recent,
+            use_llm=effective_use_llm,
+            plan=run.plan.to_dict(),
+            papers=[paper.to_dict() for paper in run.papers],
+            errors=run.errors,
+            source_meta=serialize_source_meta(run.source_meta),
+            created_at=created_at.isoformat(),
+        )
         self._json(
             {
                 "runId": run_id,
@@ -209,13 +232,19 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_archive_list(self) -> None:
+        db.init(self.server.project_root / "runs" / "litassist.db")
+        items = db.archive_list()
+        # Add reportUrl field expected by frontend
+        for item in items:
+            item["reportUrl"] = f"/runs/web/{item['id']}/report.md"
+        # Fallback: scan filesystem for pre-migration archives
         archive_root_dir = (
             self.server.project_root / "runs" / "web"
         ).resolve()
-        items = []
+        sqlite_ids = {item["id"] for item in items}
         if archive_root_dir.exists():
             for run_dir in sorted(archive_root_dir.iterdir(), reverse=True):
-                if not run_dir.is_dir():
+                if not run_dir.is_dir() or run_dir.name in sqlite_ids:
                     continue
                 summary = load_archive_summary(run_dir)
                 if summary:
@@ -223,6 +252,13 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         self._json({"items": items})
 
     def _handle_archive_detail(self, run_id: str) -> None:
+        db.init(self.server.project_root / "runs" / "litassist.db")
+        detail = db.archive_get(run_id)
+        if detail is not None:
+            detail["reportUrl"] = f"/runs/web/{run_id}/report.md"
+            self._json({"item": detail})
+            return
+        # Fallback to filesystem for pre-migration archives
         run_dir = resolve_archive_dir(self.server.project_root, run_id)
         if not run_dir.exists() or not run_dir.is_dir():
             self._json({"error": "Archive not found"}, status=HTTPStatus.NOT_FOUND)
@@ -235,10 +271,11 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_archive_delete(self, payload: dict[str, Any]) -> None:
         run_id = required_text(payload, "runId")
+        db.init(self.server.project_root / "runs" / "litassist.db")
+        db.archive_delete(run_id)
         run_dir = resolve_archive_dir(self.server.project_root, run_id)
-        if not run_dir.exists() or not run_dir.is_dir():
-            raise ValueError("archive run not found")
-        shutil.rmtree(run_dir)
+        if run_dir.exists() and run_dir.is_dir():
+            shutil.rmtree(run_dir)
         self._json({"ok": True, "runId": run_id})
 
     def _handle_analyze_file(self, payload: dict[str, Any]) -> None:
@@ -525,7 +562,13 @@ def serve(
     port: int = 8765,
     config_path: str | Path | None = None,
     project_root: str | Path | None = None,
+    log_level: str = "INFO",
 ) -> str:
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper(), logging.INFO),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
     root = Path(project_root or Path.cwd()).resolve()
     resolved_config_path = (
         Path(config_path).resolve() if config_path else root / "config.toml"
@@ -538,8 +581,8 @@ def serve(
         config_path=resolved_config_path,
     )
     url = f"http://{host}:{server.server_port}"
-    print(f"Literature Search Assistant running at {url}")
-    print("Press Ctrl+C to stop.")
+    logger.info("Literature Search Assistant running at %s", url)
+    logger.info("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

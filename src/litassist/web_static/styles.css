@@ -1942,6 +1942,7 @@ button:disabled {
   }
 
   .sidebar-nav,
+  .sidebar-nav-secondary,
   .sidebar-bottom {
     flex-direction: row;
     flex-wrap: wrap;
@@ -2025,6 +2026,7 @@ button:disabled {
   }
 
   .sidebar-nav,
+  .sidebar-nav-secondary,
   .sidebar-bottom {
     flex-direction: column;
   }
@@ -2267,15 +2269,14 @@ html[data-theme="dark"] .sidebar-nav {
   gap: 2px;
 }
 
-html[data-theme="dark"] .sidebar-nav::before {
-  content: "主 导 航";
+html[data-theme="dark"] .sidebar-section-label {
   display: block;
   padding: 4px 12px;
-  margin-bottom: 4px;
+  margin: 12px 0 4px;
   color: #64748b;
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 1.5px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
 }
 
 html[data-theme="dark"] .sidebar-link {
@@ -2289,6 +2290,12 @@ html[data-theme="dark"] .sidebar-link {
   font-weight: 500;
   text-decoration: none;
   transition: all 0.15s;
+}
+
+html[data-theme="dark"] .sidebar-nav-secondary .sidebar-link {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #64748b !important;
 }
 
 html[data-theme="dark"] .sidebar-link.active {
@@ -2306,6 +2313,13 @@ html[data-theme="dark"] .sidebar-icon svg {
   height: 18px;
 }
 
+html[data-theme="dark"] .sidebar-nav-secondary .sidebar-link.active {
+  background: rgba(59, 130, 246, 0.06) !important;
+  color: #93c5fd !important;
+}
+html[data-theme="dark"] .sidebar-nav-secondary .sidebar-link:not(.active):hover {
+  color: #cbd5e1 !important;
+}
 html[data-theme="dark"] .sidebar-link[data-count]:not([data-count=""])::after {
   content: attr(data-count);
   margin-left: auto;
@@ -2929,7 +2943,20 @@ h4 {
   margin-top: 0;
 }
 
-.sidebar-link {
+.sidebar-nav-secondary {
+  margin-top: 0;
+}
+
+.sidebar-section-label {
+  margin: 16px 12px 6px;
+  color: var(--lr-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+}
+
+.sidebar-nav .sidebar-link {
   min-height: 44px;
   gap: 10px;
   margin-bottom: 0;
@@ -2940,16 +2967,36 @@ h4 {
   font-weight: 550;
 }
 
+.sidebar-nav-secondary .sidebar-link {
+  min-height: 36px;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--lr-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .sidebar-link.active {
   background: var(--lr-accent-soft);
   color: var(--lr-accent-strong);
   box-shadow: inset 0 0 0 1px rgba(15, 143, 127, 0.12);
 }
 
+.sidebar-nav-secondary .sidebar-link.active {
+  background: var(--lr-accent-soft);
+  color: var(--lr-accent-strong);
+  box-shadow: inset 0 0 0 1px rgba(15, 143, 127, 0.08);
+}
+
 .sidebar-link:not(.active):hover {
   background: var(--lr-bg-card-soft);
   color: var(--lr-text-primary);
   transform: none;
+}
+
+.sidebar-nav-secondary .sidebar-link:not(.active):hover {
+  color: var(--lr-text-secondary);
 }
 
 .sidebar-link.muted {
@@ -3734,7 +3781,8 @@ button:hover:not(:disabled),
 
   .sidebar-top,
   .sidebar-bottom,
-  .sidebar-nav {
+  .sidebar-nav,
+  .sidebar-nav-secondary {
     gap: 8px;
   }
 
@@ -6391,4 +6439,84 @@ textarea:focus {
 /* ── Disabled state indicators ─────────────────────── */
 
 /* ── Remove old dark theme background gradients that clash ─── */
+
+/* 46. Error state UI — source error details, retry button */
+.source-error-detail {
+  margin: 6px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(212, 93, 76, 0.06);
+  border: 1px solid rgba(212, 93, 76, 0.12);
+}
+.source-error-detail summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.source-error-detail[open] {
+  padding-bottom: 4px;
+}
+.error-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--danger);
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+.error-message {
+  margin: 6px 0 2px;
+  font-size: 12px;
+  color: var(--muted-strong);
+  line-height: 1.5;
+  padding-left: 4px;
+  border-left: 2px solid rgba(212, 93, 76, 0.25);
+}
+.error-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.retry-btn:hover {
+  background: var(--danger);
+  color: #fff;
+}
+.retry-icon {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* 47. Loading state enhancements */
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0; }
+  40% { opacity: 1; }
+}
+.loading-dots span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  margin: 0 2px;
+  animation: pulse-dot 1.4s infinite;
+}
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
 

@@ -539,14 +539,24 @@ async function runPlan() {
   }
 }
 
-async function runSearch() {
-  const payload = {
+/** Stores the last search payload so "retry" can re-run it. */
+let _lastSearchPayload = null;
+
+window.retryLastSearch = function retryLastSearch() {
+  if (_lastSearchPayload) {
+    runSearch(_lastSearchPayload);
+  }
+};
+
+async function runSearch(externalPayload) {
+  const payload = externalPayload || {
     ...payloadBase(),
     sources: selectedSources(),
     limit: candidatePoolLimit(),
     fromYear: els.fromYear.value ? Number(els.fromYear.value) : null,
     preferRecent: els.preferRecent.checked,
   };
+  _lastSearchPayload = payload;
   clearErrors();
   setWorkflowStatus("检索中", "正在调用已选数据库并整理候选结果。");
   setFlowStep("search");
@@ -1319,9 +1329,24 @@ function renderErrors(errors) {
   const entries = Object.entries(errors);
   if (!entries.length) return;
   els.errorOutput.hidden = false;
-  els.errorOutput.innerHTML = entries
-    .map(([source, error]) => `<p><strong>${escapeHtml(sourceLabel(source))}</strong>: ${escapeHtml(error)}</p>`)
-    .join("");
+  const html = [];
+  for (const [source, error] of entries) {
+    html.push(
+      `<details class="source-error-detail">
+        <summary><strong>${escapeHtml(sourceLabel(source))}</strong> <span class="error-badge">出错</span></summary>
+        <p class="error-message">${escapeHtml(error)}</p>
+      </details>`
+    );
+  }
+  // Add retry button
+  html.push(
+    `<div class="error-actions">
+      <button id="retry-search-btn" class="retry-btn" onclick="retryLastSearch()">
+        <span class="retry-icon">↻</span> 重试检索
+      </button>
+    </div>`
+  );
+  els.errorOutput.innerHTML = html.join("");
 }
 
 function renderSourceSummary(errors = {}, sourceMeta = {}) {
@@ -1389,6 +1414,17 @@ function renderPapers(papers) {
   els.papers.innerHTML = "";
   els.papersEmpty.hidden = papers.length !== 0;
   if (!papers.length) {
+    if (state.papers.length > 0 && papers.length === 0) {
+      // Has results but all filtered out
+      els.papersEmpty.innerHTML =
+        '<div class="empty-state"><h3>筛选无结果</h3><p>当前筛选条件未匹配到文献，试试调整关键词或清除筛选条件。</p></div>';
+    } else if (state.plan) {
+      // Search was attempted but returned nothing
+      els.papersEmpty.innerHTML =
+        '<div class="empty-state"><h3>未找到匹配文献</h3><p>当前检索条件未返回结果，建议调整关键词、扩大年份范围或启用更多数据源。</p></div>';
+    } else {
+      els.papersEmpty.innerHTML = '<p>检索结果将呈现在此处。</p>';
+    }
     renderPagination(papers);
     updateSelectionUi();
     return;
@@ -2589,7 +2625,17 @@ function setBusy(isBusy, message = "") {
   els.dryRunButton.disabled = isBusy || state.selectedKeys.size === 0;
   els.saveLlmConfig.disabled = isBusy;
   els.saveSourceConfig.disabled = isBusy;
-  if (message) setStatus(message);
+  if (message) {
+    setStatus(message);
+    if (isBusy) {
+      const dots = document.createElement("span");
+      dots.className = "loading-dots";
+      dots.append(document.createElement("span"));
+      dots.append(document.createElement("span"));
+      dots.append(document.createElement("span"));
+      els.status.append(dots);
+    }
+  }
 }
 
 function setStatus(message) {

@@ -1,20 +1,24 @@
+"""Semantic Scholar API state management — cache, budget, usage tracking.
+
+Cache and usage data are stored in SQLite (via db.py). The cache key
+and normalization logic remain here; storage details are delegated.
+"""
+
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
-from threading import Lock
 from typing import Any
 
+from . import db
 from .config import SemanticScholarConfig
 from .models import SourceMeta
 
 
 API_VERSION = "graph/v1/paper/search"
-STATE_IO_LOCK = Lock()
 CACHE_MAX_ENTRIES = 5000
 
 
@@ -62,22 +66,9 @@ def load_cached_results(
     ttl_days: int,
     now: datetime | None = None,
 ) -> list[dict[str, Any]] | None:
-    cache_path = _cache_dir(state_root) / f"{cache_key}.json"
-    payload = _read_json_object(cache_path)
-    if payload is None:
-        return None
-    created_at_raw = payload.get("created_at")
-    if not isinstance(created_at_raw, str):
-        return None
-    try:
-        created_at = datetime.fromisoformat(created_at_raw)
-    except ValueError:
-        return None
-    current = now or datetime.now()
-    if current - created_at > timedelta(days=ttl_days):
-        return None
-    results = payload.get("results")
-    return results if isinstance(results, list) else None
+    db_path = _db_path(state_root)
+    db.init(db_path)
+    return db.cache_get(cache_key, now=now)
 
 
 def save_cached_results(
@@ -86,32 +77,10 @@ def save_cached_results(
     results: list[dict[str, Any]],
     now: datetime | None = None,
 ) -> None:
-    cache_dir = _cache_dir(state_root)
-    cache_path = cache_dir / f"{cache_key}.json"
-    payload = {
-        "created_at": (now or datetime.now()).isoformat(),
-        "results": results,
-    }
-    _write_json_object(cache_path, payload)
-    _evict_lru(cache_dir, max_entries=CACHE_MAX_ENTRIES)
-
-
-def _evict_lru(cache_dir: Path, max_entries: int) -> None:
-    """Remove oldest cache files when entry count exceeds max_entries."""
-    try:
-        entries = [
-            p for p in cache_dir.iterdir() if p.suffix == ".json" and p.is_file()
-        ]
-    except OSError:
-        return
-    if len(entries) <= max_entries:
-        return
-    entries.sort(key=lambda p: p.stat().st_mtime)
-    for stale in entries[: len(entries) - max_entries]:
-        try:
-            stale.unlink()
-        except OSError:
-            pass
+    db_path = _db_path(state_root)
+    db.init(db_path)
+    db.cache_set(cache_key, results, ttl_days=30, now=now)
+    db.cache_evict(max_entries=CACHE_MAX_ENTRIES)
 
 
 def get_budget_state(
@@ -119,10 +88,11 @@ def get_budget_state(
     config: SemanticScholarConfig,
     today: date | None = None,
 ) -> SemanticScholarBudgetState:
+    db_path = _db_path(state_root)
+    db.init(db_path)
     current = today or date.today()
-    usage = _load_usage(state_root)
     month_key = _month_key(current)
-    used = usage.get("used", 0) if usage.get("month") == month_key else 0
+    used = db.usage_get("semantic_scholar", month_key)
     remaining = max(config.monthly_search_budget - used, 0)
     if remaining <= config.cache_only_remaining:
         budget_status = "cache_only"
@@ -145,15 +115,11 @@ def record_successful_search(
     state_root: str | Path,
     today: date | None = None,
 ) -> None:
+    db_path = _db_path(state_root)
+    db.init(db_path)
     current = today or date.today()
     month_key = _month_key(current)
-    usage_path = _usage_path(state_root)
-    with STATE_IO_LOCK:
-        usage = _load_usage_unlocked(usage_path)
-        if usage.get("month") != month_key:
-            usage = {"month": month_key, "used": 0}
-        usage["used"] = int(usage.get("used", 0)) + 1
-        _write_json_object_unlocked(usage_path, usage)
+    db.usage_increment("semantic_scholar", month_key)
 
 
 def build_source_meta(
@@ -190,59 +156,9 @@ def budget_warning_message(
     return ""
 
 
-def _cache_dir(state_root: str | Path) -> Path:
-    return Path(state_root).resolve() / "runs" / "cache" / "semantic_scholar"
-
-
-def _usage_path(state_root: str | Path) -> Path:
-    return Path(state_root).resolve() / "runs" / "state" / "semantic_scholar_usage.json"
-
-
-def _load_usage(state_root: str | Path) -> dict[str, Any]:
-    usage_path = _usage_path(state_root)
-    with STATE_IO_LOCK:
-        return _load_usage_unlocked(usage_path)
-
-
-def _load_usage_unlocked(usage_path: Path) -> dict[str, Any]:
-    payload = _read_json_object_unlocked(usage_path)
-    return payload or {}
-
-
-def _read_json_object(path: Path) -> dict[str, Any] | None:
-    with STATE_IO_LOCK:
-        return _read_json_object_unlocked(path)
-
-
-def _read_json_object_unlocked(path: Path) -> dict[str, Any] | None:
-    if not path.exists() or not path.is_file():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _write_json_object(path: Path, payload: dict[str, Any]) -> None:
-    with STATE_IO_LOCK:
-        _write_json_object_unlocked(path, payload)
-
-
-def _write_json_object_unlocked(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_name(f".{path.name}.tmp")
-    serialized = json.dumps(payload, ensure_ascii=False, indent=2)
-    try:
-        temp_path.write_text(serialized, encoding="utf-8")
-        temp_path.replace(path)
-    finally:
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
-
-
 def _month_key(today: date) -> str:
     return today.strftime("%Y-%m")
+
+
+def _db_path(state_root: str | Path) -> Path:
+    return Path(state_root).resolve() / "runs" / "litassist.db"

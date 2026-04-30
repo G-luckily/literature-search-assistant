@@ -72,6 +72,12 @@ def main(argv: list[str] | None = None) -> None:
     web_parser.add_argument("--config", default=None)
     web_parser.add_argument("--host", default="127.0.0.1")
     web_parser.add_argument("--port", type=int, default=8765)
+    web_parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging verbosity.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -129,7 +135,10 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "web":
         port = find_free_port(args.host, args.port)
-        serve(host=args.host, port=port, config_path=args.config)
+        serve(
+            host=args.host, port=port, config_path=args.config,
+            log_level=args.log_level,
+        )
         return
 
 

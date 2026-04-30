@@ -16,11 +16,14 @@
         document.documentElement.dataset.theme = "dark";
       }
     </script>
-    <link rel="stylesheet" href="/styles.css?v=2" />
-    <link rel="stylesheet" href="/light-theme.css?v=2" />
+    <link rel="stylesheet" href="/styles.css?v=6" />
+    <link rel="stylesheet" href="/light-theme.css?v=6" />
   </head>
   <body>
     <div class="studio-shell">
+      <!-- Subtle ambient gradient background -->
+      <div class="ambient-glow" aria-hidden="true"></div>
+
       <aside id="literature-sidebar" class="sidebar">
         <div class="sidebar-top">
           <div class="sidebar-brand">
@@ -36,22 +39,22 @@
             </div>
           </div>
 
-          <button type="button" class="new-exp-btn" onclick="location.hash='search'">+ 新起检索任务</button>
+          <button type="button" class="new-exp-btn" onclick="startNewResearch()">+ 新建文献课题</button>
 
           <nav class="sidebar-nav" aria-label="文献智研导航">
-            <a class="sidebar-link active" href="#search" data-page="search">
+            <a class="sidebar-link active" href="#search" data-page="search" data-count="0">
               <span class="sidebar-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               </span>
               <span>检索工作区</span>
             </a>
-            <a class="sidebar-link" href="#collection" data-page="collection">
+            <a class="sidebar-link" href="#collection" data-page="collection" data-count="0">
               <span class="sidebar-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
               </span>
               <span>文献收藏</span>
             </a>
-            <a class="sidebar-link" href="#archive" data-page="archive">
+            <a class="sidebar-link" href="#archive" data-page="archive" data-count="0">
               <span class="sidebar-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               </span>
@@ -61,7 +64,7 @@
         </div>
 
         <div class="sidebar-bottom">
-          <a class="sidebar-link" href="#settings" data-page="settings">
+          <a class="sidebar-link" href="#settings" data-page="settings" data-count="">
             <span class="sidebar-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             </span>
@@ -73,56 +76,6 @@
             </span>
             <span>使用指南</span>
           </a>
-        </div>
-      </aside>
-
-      <aside id="intent-sidebar" class="intent-sidebar" aria-label="检索历史与 Zotero 状态">
-        <div class="intent-sidebar-top">
-          <button
-            id="intent-sidebar-toggle"
-            type="button"
-            class="intent-sidebar-toggle"
-            aria-label="折叠侧边栏"
-            aria-expanded="true"
-          >
-            <span></span>
-            <span></span>
-          </button>
-          <button id="new-research-button" type="button" class="intent-new-button">
-            <span>＋</span>
-            <span class="intent-sidebar-label">新建文献课题</span>
-          </button>
-        </div>
-
-        <nav class="intent-nav-links">
-          <a href="#search" data-page="search" class="intent-nav-link" title="检索工作区">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <span class="intent-sidebar-label">检索工作区</span>
-          </a>
-          <a href="#collection" data-page="collection" class="intent-nav-link" title="文献收藏">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-            <span class="intent-sidebar-label">文献收藏</span>
-          </a>
-          <a href="#archive" data-page="archive" class="intent-nav-link" title="历史归档">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <span class="intent-sidebar-label">历史归档</span>
-          </a>
-          <a href="#settings" data-page="settings" class="intent-nav-link" title="系统设置">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            <span class="intent-sidebar-label">系统设置</span>
-          </a>
-        </nav>
-        <div class="intent-history-shell">
-          <p class="intent-sidebar-section intent-sidebar-label">检索历史</p>
-          <div id="intent-history-list" class="intent-history-list"></div>
-        </div>
-
-        <div class="intent-sidebar-footer">
-          <div class="intent-user-avatar">G</div>
-          <div class="intent-zotero-meta intent-sidebar-label">
-            <strong>Guo</strong>
-            <span><i></i>Zotero 已连接</span>
-          </div>
         </div>
       </aside>
 
@@ -165,44 +118,73 @@
                   ></textarea>
                 </label>
 
+                <p class="file-upload-status" id="file-upload-status" hidden></p>
+
+                <details id="keyword-conditions-panel" class="advanced-options">
+                  <summary>
+                    <span>高级选项</span>
+                    <small>可选</small>
+                  </summary>
+                  <span id="search-settings-summary" class="sr-only">自动解析检索条件</span>
+                  <div class="advanced-options-body">
+                    <label>
+                      <span>中文关键词</span>
+                      <input id="zh-keywords" placeholder="留空则自动生成" />
+                    </label>
+                    <label>
+                      <span>英文关键词</span>
+                      <input id="en-keywords" placeholder="留空则自动生成" />
+                    </label>
+                    <label>
+                      <span>起始年份</span>
+                      <input id="from-year" type="number" min="1900" max="2100" placeholder="自动判断" />
+                    </label>
+                    <label>
+                      <span>候选文献规模</span>
+                      <input id="limit" type="number" min="1" max="200" value="100" />
+                    </label>
+                    <label>
+                      <span>排序偏好</span>
+                      <select id="sort-preference">
+                        <option value="relevance">按相关度</option>
+                        <option value="recency">按发表时间</option>
+                        <option value="citations">按引用量</option>
+                      </select>
+                    </label>
+                    <label class="advanced-check">
+                      <input id="prefer-recent" type="checkbox" checked />
+                      <span>优先最新／高被引</span>
+                    </label>
+                    <label class="advanced-check llm-check">
+                      <input id="use-llm" type="checkbox" checked />
+                      <span>AI 优化检索词</span>
+                      <small class="setting-desc">基于大模型优化检索式，提升召回率</small>
+                    </label>
+                  </div>
+                </details>
+
                 <div class="intent-card-footer">
-                  <details id="keyword-conditions-panel" class="advanced-options">
-                    <summary>
-                      <span>高级选项</span>
-                      <small>可选</small>
-                    </summary>
-                    <span id="search-settings-summary" class="sr-only">自动解析检索条件</span>
-                    <div class="advanced-options-body">
-                      <label>
-                        <span>中文关键词</span>
-                        <input id="zh-keywords" placeholder="留空，由系统自动生成" />
-                      </label>
-                      <label>
-                        <span>英文关键词</span>
-                        <input id="en-keywords" placeholder="Leave blank for AI expansion" />
-                      </label>
-                      <label>
-                        <span>起始年份</span>
-                        <input id="from-year" type="number" min="1900" max="2100" placeholder="自动判断" />
-                      </label>
-                      <label>
-                        <span>候选池规模/源</span>
-                        <input id="limit" type="number" min="1" max="200" value="100" />
-                      </label>
-                      <label class="advanced-check">
-                        <input id="prefer-recent" type="checkbox" checked />
-                        <span>优先最新/高被引</span>
-                      </label>
-                      <label class="advanced-check">
-                        <input id="use-llm" type="checkbox" />
-                        <span>启用 AI 优化检索词</span>
-                      </label>
+                  <div class="file-upload-area" id="file-upload-area">
+                    <input type="file" id="file-input" accept="image/*,.pdf,.txt,.md,.csv" hidden />
+                    <button type="button" class="file-upload-btn" id="file-dropzone">
+                      <svg class="file-upload-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                      </svg>
+                      <span>上传文件</span>
+                    </button>
+                    <div class="file-upload-preview" id="file-preview" hidden>
+                      <span class="file-preview-name" id="file-preview-name"></span>
+                      <button type="button" class="file-preview-clear" id="file-preview-clear" title="移除文件">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                      </button>
                     </div>
-                  </details>
+                  </div>
 
                   <div class="intent-actions">
-                    <button id="plan-button" type="button" class="intent-secondary">生成方案</button>
-                    <button id="search-button" type="button" class="intent-primary" aria-label="启动直接检索">检索</button>
+                    <button id="plan-button" type="button" class="intent-secondary">生成检索方案</button>
+                    <button id="search-button" type="button" class="intent-primary" aria-label="开始检索">开始检索</button>
                   </div>
                 </div>
               </section>
@@ -323,6 +305,7 @@
                       <label class="source-chip-option"><input type="checkbox" name="source" value="openalex" checked /><span>OpenAlex</span></label>
                       <label class="source-chip-option"><input type="checkbox" name="source" value="crossref" checked /><span>Crossref</span></label>
                       <label class="source-chip-option"><input type="checkbox" name="source" value="semantic_scholar" /><span>Semantic Scholar</span></label>
+                      <label class="source-chip-option"><input type="checkbox" name="source" value="zotero" /><span>Zotero 文献库</span></label>
                       <label class="source-chip-option"><input type="checkbox" name="source" value="google_scholar" /><span>Google Scholar</span></label>
                       <label class="source-chip-option"><input type="checkbox" name="source" value="web_of_science" /><span>Web of Science</span></label>
                     </div>
@@ -335,6 +318,16 @@
                         <label class="field"><span>Semantic Scholar Key</span><input id="semantic-scholar-api-key" type="password" /></label>
                         <label class="field"><span>SerpApi / Google Scholar Key</span><input id="google-scholar-api-key" type="password" /></label>
                         <label class="field"><span>Web of Science Key</span><input id="web-of-science-api-key" type="password" /></label>
+                        <h4 style="margin:12px 0 4px;font-size:13px;color:var(--text-muted)">Zotero 文献库</h4>
+                        <label class="field"><span>Zotero Library ID</span><input id="zotero-library-id" type="text" placeholder="用户/群组 ID" /></label>
+                        <label class="field"><span>Zotero API Key</span><input id="zotero-api-key" type="password" /></label>
+                        <label class="field"><span>Library 类型</span>
+                          <select id="zotero-library-type">
+                            <option value="user">用户</option>
+                            <option value="group">群组</option>
+                          </select>
+                        </label>
+                        <label class="field"><span>合集 Key（可选）</span><input id="zotero-collection-key" type="text" placeholder="限制搜索到特定合集" /></label>
                       </div>
                       <div class="config-actions">
                         <button id="save-source-config" class="btn-sm">保存数据源配置</button>
@@ -511,6 +504,6 @@
       </article>
     </template>
 
-    <script src="/app.js"></script>
+    <script src="/app.js?v=2"></script>
   </body>
 </html>

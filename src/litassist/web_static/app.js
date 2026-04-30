@@ -20,10 +20,15 @@ const state = {
   workspaceSnapshot: null,
   workspaceRestored: false,
   theme: document.documentElement.dataset.theme || "dark",
-  intentSidebarCollapsed: false,
   selectedMockTaskId: "",
   currentPage: 1,
   searchHistory: [],
+  /** Full extracted text from the last uploaded file, for multimodal search injection */
+  fileContext: "",
+  /** Structured search dimensions extracted by LLM PDF analysis */
+  searchDimensions: null,
+  /** Per-database suggested queries from LLM PDF analysis */
+  suggestedQueries: null,
 };
 
 const THEME_STORAGE_KEY = "litassist.theme.v1";
@@ -37,9 +42,6 @@ const els = {
   workspaceOverview: document.querySelector("#workspace-overview"),
   pageViews: [...document.querySelectorAll(".page-view")],
   themeToggle: document.querySelector("#theme-toggle"),
-  intentSidebar: document.querySelector("#intent-sidebar"),
-  intentSidebarToggle: document.querySelector("#intent-sidebar-toggle"),
-  newResearchButton: document.querySelector("#new-research-button"),
   intentHistoryList: document.querySelector("#intent-history-list"),
   need: document.querySelector("#need"),
   zhKeywords: document.querySelector("#zh-keywords"),
@@ -47,6 +49,7 @@ const els = {
   limit: document.querySelector("#limit"),
   fromYear: document.querySelector("#from-year"),
   preferRecent: document.querySelector("#prefer-recent"),
+  sortPreference: document.querySelector("#sort-preference"),
   searchSettingsSummary: document.querySelector("#search-settings-summary"),
   status: document.querySelector("#status"),
   planButton: document.querySelector("#plan-button"),
@@ -69,6 +72,10 @@ const els = {
   semanticScholarApiKey: document.querySelector("#semantic-scholar-api-key"),
   googleScholarApiKey: document.querySelector("#google-scholar-api-key"),
   webOfScienceApiKey: document.querySelector("#web-of-science-api-key"),
+  zoteroLibraryId: document.querySelector("#zotero-library-id"),
+  zoteroApiKey: document.querySelector("#zotero-api-key"),
+  zoteroLibraryType: document.querySelector("#zotero-library-type"),
+  zoteroCollectionKey: document.querySelector("#zotero-collection-key"),
   saveSourceConfig: document.querySelector("#save-source-config"),
   sourceConfigStatus: document.querySelector("#source-config-status"),
   filterText: document.querySelector("#filter-text"),
@@ -116,14 +123,11 @@ const els = {
   confirmPlanSearch: document.querySelector("#confirm-plan-search"),
   topNavLinks: [...document.querySelectorAll(".topbar-link[data-page]")],
   sidebarNavLinks: [...document.querySelectorAll(".sidebar-link[data-page]")],
-  intentNavLinks: [...document.querySelectorAll(".intent-nav-link")],
 };
 
 const sourceInputs = [...document.querySelectorAll('input[name="source"]')];
 
 els.themeToggle.addEventListener("click", () => toggleTheme());
-els.intentSidebarToggle.addEventListener("click", () => toggleIntentSidebar());
-els.newResearchButton.addEventListener("click", () => startNewResearch());
 els.planButton.addEventListener("click", () => runPlan());
 els.searchButton.addEventListener("click", () => runSearch());
 els.dryRunButton.addEventListener("click", () => importZotero());
@@ -135,6 +139,7 @@ els.llmProvider.addEventListener("change", () => {
 });
 els.llmEnabled.addEventListener("change", () => updateDashboard());
 els.need.addEventListener("input", () => persistWorkspaceSnapshot());
+initFileUpload();
 els.need.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
     event.preventDefault();
@@ -170,7 +175,7 @@ for (const input of sourceInputs) {
   });
 }
 
-for (const link of [...els.topNavLinks, ...els.sidebarNavLinks, ...els.intentNavLinks]) {
+for (const link of [...els.topNavLinks, ...els.sidebarNavLinks]) {
   link.addEventListener("click", (event) => handleNavigation(event, link));
 }
 
@@ -207,15 +212,6 @@ function initializeTheme() {
 
 function toggleTheme() {
   applyTheme(state.theme === "light" ? "dark" : "light");
-}
-
-function toggleIntentSidebar() {
-  state.intentSidebarCollapsed = !state.intentSidebarCollapsed;
-  document.body.dataset.sidebar = state.intentSidebarCollapsed ? "collapsed" : "expanded";
-  els.intentSidebarToggle.setAttribute(
-    "aria-expanded",
-    state.intentSidebarCollapsed ? "false" : "true",
-  );
 }
 
 function loadSearchHistory() {
@@ -346,6 +342,7 @@ function startNewResearch() {
   state.reportPath = "";
   state.selectedKeys = new Set();
   clearErrors();
+  _resetFileUploadUI();
   els.keywordOutput.innerHTML = "";
   els.planDetailOutput.innerHTML = "";
   updateReportLink("");
@@ -417,7 +414,6 @@ function setActivePage(page, updateHash = true) {
 
   activateLink(els.topNavLinks, normalized);
   activateLink(els.sidebarNavLinks, normalized);
-  activateLink(els.intentNavLinks, normalized);
 
   if (normalized === "search") {
     setFlowStep(state.papers.length ? "search" : state.plan ? "plan" : "ask");
@@ -488,12 +484,22 @@ function activateLink(links, targetId) {
 }
 
 function payloadBase() {
-  return {
+  const base = {
     need: els.need.value.trim(),
     zhKeywords: splitKeywords(els.zhKeywords.value),
     enKeywords: splitKeywords(els.enKeywords.value),
     useLlm: els.useLlm.checked,
   };
+  if (state.fileContext) {
+    base.fileContext = state.fileContext;
+  }
+  if (state.searchDimensions) {
+    base.searchDimensions = state.searchDimensions;
+  }
+  if (state.suggestedQueries) {
+    base.suggestedQueries = state.suggestedQueries;
+  }
+  return base;
 }
 
 function splitKeywords(value) {
@@ -614,24 +620,25 @@ async function importZotero() {
       apply,
     });
     const result = data.result || {};
+    const hasErrors = result.errors && result.errors.length;
     setStatus(
-      `Zotero：已创建 ${result.created || 0}，已跳过 ${result.skipped || 0}，错误 ${(result.errors || []).length}`,
+      `Zotero：已创建 ${result.created || 0}，已跳过 ${result.skipped || 0}，错误 ${hasErrors ? result.errors.length : 0}`,
     );
     setWorkflowStatus(
       apply ? "已同步" : "预演中",
       apply ? "Zotero 同步完成。" : "已完成 Zotero 预演检查。",
     );
-    if (result.errors && result.errors.length) {
+    if (hasErrors) {
       showError(result.errors.join("\n"));
     }
     addHistoryEntry(apply ? "写入 Zotero" : "预演导入 Zotero", {
       selected: selectedPapers.length,
       created: result.created || 0,
       skipped: result.skipped || 0,
-      errors: (result.errors || []).length,
+      errors: hasErrors ? result.errors.length : 0,
       applied: apply,
     });
-    if (apply) {
+    if (apply && !hasErrors) {
       for (const paper of selectedPapers) {
         paper.imported = true;
         paper.zoteroImported = true;
@@ -699,6 +706,12 @@ function renderSourceConfig(config) {
   els.semanticScholarApiKey.value = "";
   els.googleScholarApiKey.value = "";
   els.webOfScienceApiKey.value = "";
+  // Zotero: show configured keys but not the actual value (password field cleared on purpose)
+  const zotero = sources.zotero || {};
+  els.zoteroLibraryId.value = zotero.libraryId || "";
+  els.zoteroApiKey.value = "";
+  els.zoteroLibraryType.value = zotero.libraryType || "user";
+  els.zoteroCollectionKey.value = zotero.hasCollectionKey ? "(已配置)" : "";
   renderSourceBadges();
   setSourceConfigStatus(sourceConfigText());
 }
@@ -740,6 +753,10 @@ async function saveSourceConfig() {
       semanticScholarApiKey: els.semanticScholarApiKey.value.trim(),
       googleScholarApiKey: els.googleScholarApiKey.value.trim(),
       webOfScienceApiKey: els.webOfScienceApiKey.value.trim(),
+      zoteroLibraryId: els.zoteroLibraryId.value.trim(),
+      zoteroApiKey: els.zoteroApiKey.value.trim(),
+      zoteroLibraryType: els.zoteroLibraryType.value,
+      zoteroCollectionKey: els.zoteroCollectionKey.value.trim(),
     });
     state.config = data;
     renderConfig(data);
@@ -802,7 +819,13 @@ function sourceConfigText() {
     semanticConfigText(sources.semantic_scholar),
     sourceReadyText("google_scholar", "Google Scholar", sources),
     sourceReadyText("web_of_science", "Web of Science", sources),
+    zoteroReadyText(sources.zotero),
   ].join(" · ");
+}
+
+function zoteroReadyText(status) {
+  if (!status) return "Zotero 未配置";
+  return status.configured ? "Zotero 已配置" : "Zotero 未配置";
 }
 
 function semanticConfigText(status) {
@@ -861,20 +884,24 @@ function renderPlanValueLayer(plan) {
       <p>Search Plan</p>
       <h4>方案已压缩为可执行摘要</h4>
     </div>
-    <span>${escapeHtml(planBadgeText(plan))}</span>
+    <div class="plan-summary-actions">
+      <span>${escapeHtml(planBadgeText(plan))}</span>
+      <button type="button" class="plan-edit-btn" title="编辑检索方案">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        <span>编辑方案</span>
+      </button>
+    </div>
   `;
+  header.querySelector(".plan-edit-btn").addEventListener("click", () => openPlanEditor(plan));
 
   const grid = document.createElement("div");
   grid.className = "plan-value-grid";
   grid.append(researchQuestionPanel(plan), searchDimensionsPanel(plan), keywordClusterPanel(plan));
 
-  const editBtn = document.createElement("button");
-  editBtn.type = "button";
-  editBtn.className = "plan-edit-btn";
-  editBtn.textContent = "编辑方案";
-  editBtn.addEventListener("click", () => openPlanEditor(plan));
-
-  els.keywordOutput.append(header, editBtn, grid);
+  els.keywordOutput.append(header, grid);
 }
 
 function researchQuestionPanel(plan) {
@@ -1083,6 +1110,19 @@ function openPlanEditor(plan) {
 function renderPlanEngineLayer(plan) {
   els.planDetailOutput.innerHTML = "";
 
+  const head = document.createElement("div");
+  head.className = "plan-engine-head";
+  head.innerHTML = `
+    <button type="button" class="plan-edit-btn" title="编辑检索方案">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+      <span>编辑方案</span>
+    </button>
+  `;
+  head.querySelector(".plan-edit-btn").addEventListener("click", () => openPlanEditor(plan));
+
   const details = document.createElement("details");
   details.className = "plan-engine-panel";
   details.innerHTML = `
@@ -1096,7 +1136,7 @@ function renderPlanEngineLayer(plan) {
   body.className = "plan-engine-body";
   body.append(criteriaGrid(plan), queryRoundsPanel(plan));
   details.append(body);
-  els.planDetailOutput.append(details);
+  els.planDetailOutput.append(head, details);
 }
 
 function criteriaGrid(plan) {
@@ -1298,6 +1338,7 @@ function renderSourceBadges(errors = {}, sourceMeta = {}) {
     "semantic_scholar",
     "google_scholar",
     "web_of_science",
+    "zotero",
   ];
   els.sourceStatus.innerHTML = "";
   for (const key of keys) {
@@ -1415,6 +1456,45 @@ function renderPapers(papers) {
     favoriteButton.textContent = saved ? "已收藏" : "收藏";
     favoriteButton.classList.toggle("active", saved);
     favoriteButton.addEventListener("click", () => toggleSavePaper(paper));
+
+    const imported = paperImported(paper);
+    const zoteroBtn = document.createElement("button");
+    zoteroBtn.type = "button";
+    zoteroBtn.className = "paper-zotero-btn";
+    zoteroBtn.textContent = imported ? "已导入 Zotero" : "导入 Zotero";
+    zoteroBtn.disabled = imported;
+    zoteroBtn.classList.toggle("active", imported);
+    zoteroBtn.addEventListener("click", async () => {
+      zoteroBtn.disabled = true;
+      zoteroBtn.textContent = "同步中…";
+      try {
+        const data = await postJson("/api/import-zotero", {
+          papers: [paper],
+          limit: 1,
+          apply: true,
+        });
+        const result = data.result || {};
+        if (!result.errors || !result.errors.length) {
+          paper.imported = true;
+          paper.zoteroImported = true;
+          zoteroBtn.textContent = "已导入 Zotero";
+          zoteroBtn.classList.add("active");
+          setStatus(`Zotero：已创建 ${result.created || 0} 篇文献。`);
+        } else {
+          zoteroBtn.disabled = false;
+          zoteroBtn.textContent = "导入重试";
+          showError(result.errors.join("\n"));
+        }
+        persistWorkspaceMemory();
+        renderSavedPapers();
+        renderPapers(state.visiblePapers);
+      } catch (error) {
+        zoteroBtn.disabled = false;
+        zoteroBtn.textContent = "导入 Zotero";
+        showError(error.message);
+      }
+    });
+    favoriteButton.parentNode.insertBefore(zoteroBtn, favoriteButton.nextSibling);
 
     els.papers.append(node);
   });
@@ -1557,6 +1637,15 @@ function updateSelectionUi() {
   updateDashboard();
 }
 
+function updateSidebarBadges() {
+  const searchLink = document.querySelector('.sidebar-link[data-page="search"]');
+  const collectionLink = document.querySelector('.sidebar-link[data-page="collection"]');
+  const archiveLink = document.querySelector('.sidebar-link[data-page="archive"]');
+  if (searchLink) searchLink.dataset.count = String(state.papers.length || "");
+  if (collectionLink) collectionLink.dataset.count = String(state.savedPapers.length || "");
+  if (archiveLink) archiveLink.dataset.count = String(state.archiveItems.length || "");
+}
+
 function updateDashboard() {
   const sourceCount = selectedSources().length;
   const visibleCount = state.visiblePapers.length;
@@ -1588,6 +1677,7 @@ function updateDashboard() {
         : `${totalCount} 条记录`
       : "0 条记录";
   }
+  updateSidebarBadges();
 }
 
 function setWorkflowStatus(label, detail) {
@@ -1870,7 +1960,7 @@ function createSavedPaperCard(paper) {
           : ""
       }
       <button type="button" data-saved-action="tag">${tags.length ? "编辑标签" : "添加标签"}</button>
-      <button type="button" data-saved-action="import">${imported ? "重新同步 Zotero" : "导入 Zotero"}</button>
+      <button type="button" data-saved-action="import" ${imported ? "disabled" : ""}>${imported ? "已同步" : "导入 Zotero"}</button>
       <button type="button" data-saved-action="remove" class="danger">取消收藏</button>
     </div>
   `;
@@ -1914,8 +2004,13 @@ async function importSavedPaper(paper) {
       apply: true,
     });
     const result = data.result || {};
-    paper.imported = true;
-    paper.zoteroImported = true;
+    if (!result.errors || !result.errors.length) {
+      paper.imported = true;
+      paper.zoteroImported = true;
+      setStatus(`已同步到 Zotero：创建 ${result.created || 0}，跳过 ${result.skipped || 0}。`);
+    } else {
+      showError(result.errors.join("\n"));
+    }
     persistWorkspaceMemory();
     renderSavedPapers();
     renderPapers(state.visiblePapers);
@@ -1925,11 +2020,6 @@ async function importSavedPaper(paper) {
       skipped: result.skipped || 0,
       errors: (result.errors || []).length,
     });
-    if (result.errors && result.errors.length) {
-      showError(result.errors.join("\n"));
-    } else {
-      setStatus(`已同步到 Zotero：创建 ${result.created || 0}，跳过 ${result.skipped || 0}。`);
-    }
   } catch (error) {
     showError(error.message);
   } finally {
@@ -2489,6 +2579,7 @@ function sourceLabel(key) {
     semantic_scholar: "Semantic Scholar",
     google_scholar: "Google Scholar",
     web_of_science: "Web of Science",
+    zotero: "Zotero",
   }[key] || key;
 }
 
@@ -2527,4 +2618,124 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+// ── File Upload / Multimodal Input ───────────────────────────
+
+function _resetFileUploadUI() {
+  const dropzone = document.querySelector("#file-dropzone");
+  const preview = document.querySelector("#file-preview");
+  const statusEl = document.querySelector("#file-upload-status");
+  const fileInput = document.querySelector("#file-input");
+  if (dropzone) dropzone.hidden = false;
+  if (preview) preview.hidden = true;
+  if (statusEl) statusEl.hidden = true;
+  if (fileInput) fileInput.value = "";
+  state.fileContext = "";
+  state.searchDimensions = null;
+  state.suggestedQueries = null;
+}
+
+function initFileUpload() {
+  const dropzone = document.querySelector("#file-dropzone");
+  const fileInput = document.querySelector("#file-input");
+  const preview = document.querySelector("#file-preview");
+  const previewName = document.querySelector("#file-preview-name");
+  const clearBtn = document.querySelector("#file-preview-clear");
+  const statusEl = document.querySelector("#file-upload-status");
+
+  if (!dropzone || !fileInput) return;
+
+  dropzone.addEventListener("click", () => fileInput.click());
+
+  dropzone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropzone.classList.add("drag-over");
+  });
+  dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("drag-over");
+  });
+  dropzone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropzone.classList.remove("drag-over");
+    const files = e.dataTransfer?.files;
+    if (files?.length) handleFile(files[0]);
+  });
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files?.length) handleFile(fileInput.files[0]);
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => clearFileUpload());
+  }
+
+  async function handleFile(file) {
+    const maxSize = 20 * 1024 * 1024; // 20 MB
+    if (file.size > maxSize) {
+      showFileStatus("文件超过 20MB 限制。", true);
+      return;
+    }
+
+    previewName.textContent = file.name;
+    dropzone.hidden = true;
+    preview.hidden = false;
+    showFileStatus("正在分析文件…", false);
+
+    try {
+      const base64 = await fileToBase64(file);
+      const data = await postJson("/api/analyze-file", {
+        filename: file.name,
+        content: base64.split(",").pop() || base64,
+        mimeType: file.type || "application/octet-stream",
+      });
+
+      if (data.description) {
+        els.need.value = data.description;
+      }
+      if (Array.isArray(data.keywordsZh) && data.keywordsZh.length) {
+        els.zhKeywords.value = data.keywordsZh.join(", ");
+      }
+      if (Array.isArray(data.keywordsEn) && data.keywordsEn.length) {
+        els.enKeywords.value = data.keywordsEn.join(", ");
+      }
+      state.fileContext = data.sourceText || "";
+      state.searchDimensions = data.searchDimensions || null;
+      state.suggestedQueries = data.suggestedQueries || null;
+
+      const dimCount = (state.searchDimensions && state.searchDimensions.length) || 0;
+      showFileStatus(`分析完成：已提取研究主题与 ${data.keywordsZh.length + data.keywordsEn.length} 个关键词${dimCount ? `、${dimCount} 个检索维度` : ""}。`, false);
+      updateSearchSettingsSummary();
+      persistWorkspaceSnapshot();
+    } catch (error) {
+      showFileStatus(`分析失败：${error.message}`, true);
+      clearFileUpload();
+    }
+  }
+
+  function showFileStatus(message, isError) {
+    if (!statusEl) return;
+    statusEl.textContent = message;
+    statusEl.hidden = false;
+    statusEl.className = "file-upload-status" + (isError ? " error" : "");
+  }
+
+  function clearFileUpload() {
+    preview.hidden = true;
+    dropzone.hidden = false;
+    statusEl.hidden = true;
+    fileInput.value = "";
+    state.fileContext = "";
+    state.searchDimensions = null;
+    state.suggestedQueries = null;
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("读取文件失败。"));
+    reader.readAsDataURL(file);
+  });
 }

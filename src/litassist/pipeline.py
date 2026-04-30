@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
@@ -18,6 +19,7 @@ from .search import (
     SearchError,
     SemanticScholarSearcher,
     WebOfScienceSearcher,
+    ZoteroSearcher,
 )
 
 
@@ -40,6 +42,9 @@ def run_search(
     from_year: int | None = None,
     prefer_recent: bool | None = None,
     state_root: str | Path | None = None,
+    file_context: str | None = None,
+    search_dimensions: list[dict] | None = None,
+    suggested_queries: dict[str, str] | None = None,
 ) -> SearchRun:
     config = _runtime_config(config, from_year=from_year, prefer_recent=prefer_recent)
     resolved_state_root = Path(state_root or Path.cwd()).resolve()
@@ -49,6 +54,9 @@ def run_search(
         zh_keywords=zh_keywords,
         en_keywords=en_keywords,
         use_llm=use_llm,
+        file_context=file_context,
+        search_dimensions=search_dimensions,
+        suggested_queries=suggested_queries,
     )
     selected_sources = sources or config.general.enabled_sources
     per_source_limit = limit or config.general.max_results_per_source
@@ -57,11 +65,14 @@ def run_search(
     papers: list[Paper] = []
     errors: dict[str, str] = {}
     source_meta: dict[str, dict[str, Any]] = {}
-    for source in selected_sources:
+
+    def _search_one(
+        source: str,
+    ) -> tuple[str, list[Paper], str | None, dict[str, Any]]:
         searcher = searchers.get(source)
         if not searcher:
-            errors[source] = f"Unknown or unavailable source: {source}"
-            continue
+            return source, [], f"Unknown or unavailable source: {source}", {}
+
         query_rounds = _query_rounds(plan, source)
         round_errors: list[dict[str, Any]] = []
         round_stats: list[dict[str, Any]] = []
@@ -69,6 +80,7 @@ def run_search(
         successful_rounds = 0
         source_papers_total = 0
         source_unique_keys: set[str] = set()
+        local_papers: list[Paper] = []
         for round_index, query in enumerate(query_rounds, start=1):
             round_limit = _query_round_limit(
                 source=source,
@@ -79,14 +91,14 @@ def run_search(
                 if source == "semantic_scholar" and isinstance(
                     searcher, SemanticScholarSearcher
                 ):
-                    source_papers, meta = searcher.search_with_budget(
+                    round_papers, meta = searcher.search_with_budget(
                         query,
                         round_limit,
                         state_root=resolved_state_root,
                     )
                     last_meta = meta.to_dict()
                 else:
-                    source_papers = searcher.search(query, round_limit)
+                    round_papers = searcher.search(query, round_limit)
             except SearchError as exc:
                 round_errors.append(
                     {
@@ -110,9 +122,9 @@ def run_search(
                 )
                 continue
             successful_rounds += 1
-            source_papers_total += len(source_papers)
+            source_papers_total += len(round_papers)
             new_unique_count = 0
-            for paper in source_papers:
+            for paper in round_papers:
                 paper_key = paper_identity_key(paper)
                 if paper_key not in source_unique_keys:
                     source_unique_keys.add(paper_key)
@@ -129,16 +141,19 @@ def run_search(
                     "round": round_index,
                     "query": query,
                     "limit": round_limit,
-                    "retrieved_count": len(source_papers),
+                    "retrieved_count": len(round_papers),
                     "new_unique_count": new_unique_count,
                     "cumulative_unique_count": len(source_unique_keys),
                 }
             )
-            papers.extend(source_papers)
+            local_papers.extend(round_papers)
 
+        error_msg: str | None = None
         if successful_rounds == 0 and round_errors:
-            errors[source] = round_errors[0]["error"]
-        source_meta[source] = {
+            error_msg = "; ".join(
+                f"round {e['round']}: {e['error']}" for e in round_errors
+            )
+        meta = {
             **last_meta,
             "query_round_count": len(query_rounds),
             "successful_rounds": successful_rounds,
@@ -148,6 +163,16 @@ def run_search(
             "round_stats": round_stats,
             "round_errors": round_errors,
         }
+        return source, local_papers, error_msg, meta
+
+    with ThreadPoolExecutor(max_workers=len(selected_sources)) as pool:
+        futs = {pool.submit(_search_one, s): s for s in selected_sources}
+        for fut in as_completed(futs):
+            source, local_papers, error_msg, meta = fut.result()
+            papers.extend(local_papers)
+            if error_msg:
+                errors[source] = error_msg
+            source_meta[source] = meta
 
     papers = _filter_by_year(papers, config.general.from_year)
     deduped = dedupe_papers(papers, prefer_recent=config.general.prefer_recent)
@@ -171,6 +196,9 @@ def _build_search_plan(
     zh_keywords: list[str] | None,
     en_keywords: list[str] | None,
     use_llm: bool | None,
+    file_context: str | None = None,
+    search_dimensions: list[dict] | None = None,
+    suggested_queries: dict[str, str] | None = None,
 ) -> ResearchPlan:
     should_use_llm = config.llm.enabled if use_llm is None else use_llm
     if not should_use_llm:
@@ -181,6 +209,9 @@ def _build_search_plan(
             config.llm,
             zh_keywords=zh_keywords,
             en_keywords=en_keywords,
+            file_context=file_context,
+            search_dimensions=search_dimensions,
+            suggested_queries=suggested_queries,
         )
     except LLMPlannerError as exc:
         plan = build_plan(need, zh_keywords=zh_keywords, en_keywords=en_keywords)
@@ -194,6 +225,7 @@ def _searchers(config: AppConfig):
     return {
         "openalex": OpenAlexSearcher(config.general),
         "crossref": CrossrefSearcher(config.general),
+        "zotero": ZoteroSearcher(config.zotero, config.general),
         "google_scholar": GoogleScholarSearcher(
             config.general,
             config.google_scholar,
@@ -219,14 +251,7 @@ def _runtime_config(
             config.general.prefer_recent if prefer_recent is None else prefer_recent
         ),
     )
-    return AppConfig(
-        general=general,
-        semantic_scholar=config.semantic_scholar,
-        web_of_science=config.web_of_science,
-        google_scholar=config.google_scholar,
-        llm=config.llm,
-        zotero=config.zotero,
-    )
+    return replace(config, general=general)
 
 
 def _filter_by_year(papers: list[Paper], from_year: int | None) -> list[Paper]:

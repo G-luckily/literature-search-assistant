@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
+from typing import Any
 
 from .models import Paper
 
@@ -15,7 +17,7 @@ def dedupe_papers(papers: list[Paper], prefer_recent: bool = True) -> list[Paper
             merged[key] = paper
             order.append(key)
             continue
-        merged[key] = _merge(merged[key], paper)
+        merged[key] = _merge_into_target(merged[key], paper)
 
     result = [merged[key] for key in order]
     result.sort(
@@ -39,31 +41,43 @@ def _normalize_title(value: str) -> str:
     return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", value.lower())
 
 
-def _merge(left: Paper, right: Paper) -> Paper:
-    left.sources = sorted(set(left.sources + right.sources))
-    left.tags = sorted(set(left.tags + right.tags))
-
+def _merge_into_target(target: Paper, source: Paper) -> Paper:
+    kwargs: dict[str, Any] = {}
     for field_name in ("abstract", "doi", "url", "pdf_url", "venue", "external_id"):
-        if not getattr(left, field_name) and getattr(right, field_name):
-            setattr(left, field_name, getattr(right, field_name))
+        if not getattr(target, field_name) and getattr(source, field_name):
+            kwargs[field_name] = getattr(source, field_name)
 
-    if not left.authors and right.authors:
-        left.authors = right.authors
-    if left.year is None and right.year is not None:
-        left.year = right.year
-    if right.cited_by_count is not None:
-        left.cited_by_count = max(left.cited_by_count or 0, right.cited_by_count)
-    if right.score is not None:
-        left.score = max(left.score or 0, right.score)
-    if right.relevance_score is not None:
-        left.relevance_score = max(left.relevance_score or 0, right.relevance_score)
-    if right.relevance_reasons:
-        left.relevance_reasons = sorted(
-            set(left.relevance_reasons + right.relevance_reasons)
+    if not target.authors and source.authors:
+        kwargs["authors"] = source.authors
+    if target.year is None and source.year is not None:
+        kwargs["year"] = source.year
+    if source.cited_by_count is not None:
+        kwargs["cited_by_count"] = max(
+            target.cited_by_count or 0, source.cited_by_count
         )
-    if not left.oa_status and right.oa_status:
-        left.oa_status = right.oa_status
-    return left
+    if source.score is not None:
+        kwargs["score"] = max(target.score or 0, source.score)
+    if source.relevance_score is not None:
+        kwargs["relevance_score"] = max(
+            target.relevance_score or 0, source.relevance_score
+        )
+    if source.relevance_reasons:
+        kwargs["relevance_reasons"] = sorted(
+            set(target.relevance_reasons + source.relevance_reasons)
+        )
+    if not target.oa_status and source.oa_status:
+        kwargs["oa_status"] = source.oa_status
+
+    return replace(
+        target,
+        sources=sorted(set(target.sources + source.sources)),
+        tags=(
+            sorted(set(target.tags + source.tags))
+            if target.tags or source.tags
+            else target.tags
+        ),
+        **kwargs,
+    )
 
 
 def _rank_key(paper: Paper, prefer_recent: bool) -> tuple[float, int, int, int, int]:

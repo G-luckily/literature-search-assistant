@@ -84,7 +84,7 @@ def test_plan_from_payload_builds_structured_plan():
 
     assert plan.planner == "llm"
     assert plan.research_questions == ["AI 如何辅助文献检索？"]
-    assert plan.queries["cnki"] == "人工智能 OR 文献检索"
+    assert plan.queries["semantic_scholar"] == "artificial intelligence literature retrieval"
     assert plan.query_rounds["openalex"][0] == plan.queries["openalex"]
     assert len(plan.query_rounds["openalex"]) >= 2
 

@@ -19,13 +19,16 @@ def build_llm_plan(
     config: LLMConfig,
     zh_keywords: list[str] | None = None,
     en_keywords: list[str] | None = None,
+    file_context: str | None = None,
+    search_dimensions: list[dict] | None = None,
+    suggested_queries: dict[str, str] | None = None,
 ) -> ResearchPlan:
     provider = config.provider.strip().lower()
     seed = build_plan(need, zh_keywords=zh_keywords, en_keywords=en_keywords)
     if provider == "openai":
-        return _build_openai_plan(need, config, seed)
+        return _build_openai_plan(need, config, seed, file_context=file_context, search_dimensions=search_dimensions, suggested_queries=suggested_queries)
     if provider == "deepseek":
-        return _build_deepseek_plan(need, config, seed)
+        return _build_deepseek_plan(need, config, seed, file_context=file_context, search_dimensions=search_dimensions, suggested_queries=suggested_queries)
     raise LLMPlannerError(f"Unsupported LLM provider: {config.provider}")
 
 
@@ -33,6 +36,9 @@ def _build_openai_plan(
     need: str,
     config: LLMConfig,
     seed: ResearchPlan,
+    file_context: str | None = None,
+    search_dimensions: list[dict] | None = None,
+    suggested_queries: dict[str, str] | None = None,
 ) -> ResearchPlan:
     if not config.api_key:
         raise LLMPlannerError("OPENAI_API_KEY is required for LLM planning.")
@@ -46,7 +52,7 @@ def _build_openai_plan(
             },
             {
                 "role": "user",
-                "content": json.dumps(_seed_payload(need, seed), ensure_ascii=False),
+                "content": json.dumps(_seed_payload(need, seed, file_context, search_dimensions, suggested_queries), ensure_ascii=False),
             },
         ],
         "text": {
@@ -79,6 +85,9 @@ def _build_deepseek_plan(
     need: str,
     config: LLMConfig,
     seed: ResearchPlan,
+    file_context: str | None = None,
+    search_dimensions: list[dict] | None = None,
+    suggested_queries: dict[str, str] | None = None,
 ) -> ResearchPlan:
     if not config.api_key:
         raise LLMPlannerError("DEEPSEEK_API_KEY is required for LLM planning.")
@@ -92,7 +101,7 @@ def _build_deepseek_plan(
             },
             {
                 "role": "user",
-                "content": json.dumps(_seed_payload(need, seed), ensure_ascii=False),
+                "content": json.dumps(_seed_payload(need, seed, file_context, search_dimensions, suggested_queries), ensure_ascii=False),
             },
         ],
         "response_format": {"type": "json_object"},
@@ -119,13 +128,26 @@ def _build_deepseek_plan(
     return _plan_from_payload(need, parsed, seed)
 
 
-def _seed_payload(need: str, seed: ResearchPlan) -> dict[str, Any]:
-    return {
+def _seed_payload(
+    need: str,
+    seed: ResearchPlan,
+    file_context: str | None = None,
+    search_dimensions: list[dict] | None = None,
+    suggested_queries: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "need": need,
         "seed_zh_keywords": seed.zh_keywords,
         "seed_en_keywords": seed.en_keywords,
         "seed_queries": seed.queries,
     }
+    if file_context:
+        payload["file_context"] = file_context[:3000]
+    if search_dimensions:
+        payload["search_dimensions"] = search_dimensions
+    if suggested_queries:
+        payload["suggested_queries"] = suggested_queries
+    return payload
 
 
 def _system_prompt() -> str:
@@ -152,6 +174,18 @@ def _system_prompt() -> str:
         "- Google Scholar: concise keyword phrases that work well for broad recall\n"
         "- Each database query should combine terms from MULTIPLE dimensions "
         "to maximize precision\n\n"
+        "## File Context (if provided)\n"
+        "If a `file_context` field is present in the user request, it contains "
+        "the full extracted text from an uploaded document (PDF, image OCR, etc.). "
+        "Use it to extract precise research terms, technical phrases, and domain "
+        "vocabulary. Generate search queries that capture the specific methodology, "
+        "dataset names, model architectures, and application domains mentioned.\n\n"
+        "## Pre-built Search Dimensions (if provided)\n"
+        "If `search_dimensions` are present in the user request, they were pre-extracted "
+        "from an uploaded document by a separate analysis step. Use them as the "
+        "foundation for your output search_dimensions — enhance and expand them, "
+        "but preserve their core structure. If `suggested_queries` are also provided, "
+        "incorporate them into the relevant database query fields.\n\n"
         "## Output Rules\n"
         "- Return only structured JSON matching the provided schema\n"
         "- Keep term lists comprehensive yet distinct (max 25 per language)\n"

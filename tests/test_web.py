@@ -11,7 +11,8 @@ import pytest
 from litassist.config import AppConfig, load_config
 from litassist.models import ResearchPlan
 from litassist.pipeline import SearchRun
-from litassist.web import LiteratureWebServer, _reserve_archive_run_dir
+from litassist.web import LiteratureWebServer
+from litassist.web_helpers import create_timestamped_run_dir
 
 
 def test_web_health_and_plan(tmp_path: Path):
@@ -253,8 +254,8 @@ def test_web_blocks_path_traversal_outside_runs(tmp_path: Path):
 def test_archive_run_dir_is_unique_with_same_second_timestamp(tmp_path: Path):
     created_at = datetime(2026, 4, 26, 12, 0, 0)
 
-    first_run_id, first_dir = _reserve_archive_run_dir(tmp_path, created_at)
-    second_run_id, second_dir = _reserve_archive_run_dir(tmp_path, created_at)
+    first_run_id, first_dir = create_timestamped_run_dir(tmp_path, created_at)
+    second_run_id, second_dir = create_timestamped_run_dir(tmp_path, created_at)
 
     assert first_run_id == "20260426-120000"
     assert second_run_id == "20260426-120000-2"

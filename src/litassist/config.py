@@ -203,7 +203,7 @@ def save_source_config(path: str | Path, values: dict[str, Any]) -> AppConfig:
         general["prefer_recent"] = values["prefer_recent"]
     data["general"] = general
 
-    for section in ("semantic_scholar", "web_of_science", "google_scholar"):
+    for section in ("semantic_scholar", "web_of_science", "google_scholar", "zotero"):
         if section not in values:
             continue
         current = dict(data.get(section, {}))

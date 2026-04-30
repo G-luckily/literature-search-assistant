@@ -32,12 +32,15 @@ def import_papers(
 
     try:
         from pyzotero import zotero
+        from pyzotero.zotero import PyZoteroError
     except ImportError as exc:
         return ZoteroImportResult(
             created=0,
             skipped=0,
             errors=[f"pyzotero is not installed: {exc}"],
         )
+
+    import requests
 
     zot = zotero.Zotero(config.library_id, config.library_type, config.api_key)
     items = [_paper_to_zotero_item(paper, config.collection_key) for paper in selected]
@@ -48,7 +51,7 @@ def import_papers(
         batch = items[start : start + 50]
         try:
             response = zot.create_items(batch)
-        except Exception as exc:  # pyzotero raises several HTTP-specific errors.
+        except (PyZoteroError, requests.RequestException) as exc:
             errors.append(str(exc))
             continue
         created += len(response.get("successful", response.get("success", {})))

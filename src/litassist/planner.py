@@ -132,12 +132,10 @@ ZH_STOPWORDS = {
     "以来",
     "以上",
     "以前",
-    "以来",
     "任何",
     "可以",
     "可能",
     "各个",
-    "同时",
     "同时",
     "因此",
     "方面",
@@ -163,16 +161,6 @@ ZH_STOPWORDS = {
     "发展",
     "变化",
     "各种",
-    "同时",
-    "因此",
-    "方面",
-    "是否",
-    "最近",
-    "有关",
-    "本身",
-    "体现",
-    "作用",
-    # 强相关但作为单个词过于泛化，仅在短语中使用
     "对应",
     "影响",
     "机制",
@@ -294,6 +282,11 @@ def build_plan(
     queries = build_primary_queries(zh, en, need, structure)
     query_rounds = build_query_rounds(zh, en, queries, structure)
 
+    # Strip sources without a Searcher implementation so the plan only lists runnable sources
+    NOT_IMPLEMENTED = {"cnki"}
+    queries = {k: v for k, v in queries.items() if k not in NOT_IMPLEMENTED}
+    query_rounds = {k: v for k, v in query_rounds.items() if k not in NOT_IMPLEMENTED}
+
     # Build search_dimensions from structure for rule-based plans
     search_dimensions = _build_search_dimensions(structure, zh, en)
 
@@ -355,14 +348,13 @@ def build_primary_queries(
 
     wos_terms = _dedupe(en_keywords[:8] + zh_keywords[:4])
     wos_query = "TS=(" + " OR ".join(f'"{term}"' for term in wos_terms[:10]) + ")"
-    cnki_terms = zh_keywords[:10] + en_keywords[:5]
     return {
         "openalex": openalex_query,
         "crossref": crossref_query,
         "semantic_scholar": ss_query,
+        "zotero": precision_query or broad_query,
         "google_scholar": gs_query,
         "web_of_science": wos_query,
-        "cnki": " OR ".join(cnki_terms),
     }
 
 
@@ -455,11 +447,12 @@ def build_query_rounds(
                 _wos_or_query(en_keywords[3:7], zh_keywords[2:5]),
             ],
         ),
-        "cnki": _query_round_list(
-            primary_queries.get("cnki", ""),
+        "zotero": _query_round_list(
+            primary_queries.get("zotero", ""),
             [
-                _cnki_topic_query(zh_keywords[:4]),
-                " OR ".join(_dedupe(zh_keywords[:6] + en_keywords[:2])[:8]),
+                " ".join(zh_keywords[:6]),
+                " ".join(en_keywords[:6]),
+                " ".join(zh_keywords[:3] + en_keywords[:3]),
             ],
         ),
     }
@@ -855,12 +848,6 @@ def _wos_and_query(en_terms: list[str], zh_terms: list[str]) -> str:
     if not terms:
         return ""
     return "TS=(" + " AND ".join(f'"{term}"' for term in terms[:5]) + ")"
-
-
-def _cnki_topic_query(terms: list[str]) -> str:
-    if not terms:
-        return ""
-    return "主题=(" + " + ".join(f'"{term}"' for term in terms[:4]) + ")"
 
 
 def _dedupe(items: list[str]) -> list[str]:

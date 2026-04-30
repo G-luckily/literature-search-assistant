@@ -15,6 +15,7 @@ from .models import SourceMeta
 
 API_VERSION = "graph/v1/paper/search"
 STATE_IO_LOCK = Lock()
+CACHE_MAX_ENTRIES = 5000
 
 
 @dataclass(slots=True)
@@ -92,6 +93,25 @@ def save_cached_results(
         "results": results,
     }
     _write_json_object(cache_path, payload)
+    _evict_lru(cache_dir, max_entries=CACHE_MAX_ENTRIES)
+
+
+def _evict_lru(cache_dir: Path, max_entries: int) -> None:
+    """Remove oldest cache files when entry count exceeds max_entries."""
+    try:
+        entries = [
+            p for p in cache_dir.iterdir() if p.suffix == ".json" and p.is_file()
+        ]
+    except OSError:
+        return
+    if len(entries) <= max_entries:
+        return
+    entries.sort(key=lambda p: p.stat().st_mtime)
+    for stale in entries[: len(entries) - max_entries]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
 
 
 def get_budget_state(

@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from typing import Any
 
 import httpx
 
 from .config import GeneralConfig
 from .models import Paper, ResearchPlan
+
+logger = logging.getLogger(__name__)
+
+UNPAYWALL_MAX_WORKERS = 10
 
 PDF_HINTS = (".pdf", "/pdf", "type=printable", "format=pdf")
 BAD_PDF_HINTS = (".jpg", ".jpeg", ".png", ".gif", ".svg", "image/")
@@ -196,10 +203,10 @@ def enrich_papers(
     config: GeneralConfig,
     use_unpaywall: bool = True,
 ) -> list[Paper]:
-    score_relevance(papers, plan, config)
-    clean_pdf_links(papers)
+    papers = score_relevance(papers, plan, config)
+    papers = clean_pdf_links(papers)
     if use_unpaywall:
-        enrich_open_access_links(papers, config)
+        papers = enrich_open_access_links(papers, config)
     return papers
 
 
@@ -207,7 +214,8 @@ def score_relevance(
     papers: list[Paper],
     plan: ResearchPlan,
     config: GeneralConfig | None = None,
-) -> None:
+) -> list[Paper]:
+    result: list[Paper] = []
     for paper in papers:
         title = (paper.title or "").lower()
         abstract = (paper.abstract or "").lower()
@@ -261,11 +269,9 @@ def score_relevance(
             matched_reasons.append(f"无关领域降权:{irrelevant_title_hits}")
 
         # --- 综合过滤规则 ---
-        # 如果同时匹配了技术 + 研究对象，加权
         if has_tech_match and has_pop_match:
             score += 1.5
             matched_reasons.append("交叉匹配:技术+对象")
-        # 如果同时匹配了技术 + 研究对象 + 现象，高分
         if has_tech_match and has_pop_match and has_phen_match:
             score += 2.0
             matched_reasons.append("综合匹配:技术+对象+现象")
@@ -285,49 +291,73 @@ def score_relevance(
         ):
             score += min((paper.year - config.from_year + 1) / 10, 0.75)
         if has_tech_match and has_pop_match and paper.year and paper.year >= 2020:
-            score += 0.5  # 近年且交叉匹配
+            score += 0.5
 
-        # --- 严重不相关惩罚 ---
         if not has_tech_match and not has_pop_match:
             score -= 5.0
             matched_reasons.append("无技术/对象匹配:强降权")
 
-        paper.relevance_score = round(max(score, 0), 3)
-        paper.relevance_reasons = matched_reasons[:12]
+        result.append(
+            replace(
+                paper,
+                relevance_score=round(max(score, 0), 3),
+                relevance_reasons=matched_reasons[:12],
+            )
+        )
+    return result
 
 
-def clean_pdf_links(papers: list[Paper]) -> None:
+def clean_pdf_links(papers: list[Paper]) -> list[Paper]:
+    result: list[Paper] = []
     for paper in papers:
         if paper.pdf_url and not looks_like_pdf_url(paper.pdf_url):
-            paper.raw["discarded_pdf_url"] = paper.pdf_url
-            paper.pdf_url = None
+            result.append(
+                replace(
+                    paper,
+                    pdf_url=None,
+                    raw={**paper.raw, "discarded_pdf_url": paper.pdf_url},
+                )
+            )
+        else:
+            result.append(paper)
+    return result
 
 
-def enrich_open_access_links(papers: list[Paper], config: GeneralConfig) -> None:
+def enrich_open_access_links(papers: list[Paper], config: GeneralConfig) -> list[Paper]:
     dois = sorted({paper.doi for paper in papers if paper.doi})
     if not dois:
-        return
+        return papers
     headers = {"User-Agent": config.user_agent}
     params = {}
     if config.contact_email:
         params["email"] = config.contact_email
 
-    try:
-        with httpx.Client(
-            timeout=config.request_timeout_seconds, headers=headers
-        ) as client:
-            for doi in dois:
-                response = client.get(
-                    f"https://api.unpaywall.org/v2/{doi}",
-                    params=params,
-                )
+    url = "https://api.unpaywall.org/v2/{doi}"
+
+    def _fetch(doi: str) -> tuple[str, dict[str, Any] | None]:
+        try:
+            with httpx.Client(
+                timeout=config.request_timeout_seconds, headers=headers
+            ) as client:
+                response = client.get(url.format(doi=doi), params=params)
                 if response.status_code == 404:
-                    continue
+                    return doi, None
                 response.raise_for_status()
-                payload = response.json()
-                _apply_unpaywall(papers, doi, payload)
-    except httpx.HTTPError:
-        return
+                return doi, response.json()
+        except httpx.HTTPError:
+            logger.debug("Unpaywall lookup failed for DOI %s", doi)
+            return doi, None
+
+    results: list[tuple[str, dict[str, Any] | None]] = []
+    with ThreadPoolExecutor(max_workers=UNPAYWALL_MAX_WORKERS) as pool:
+        futs = {pool.submit(_fetch, doi): doi for doi in dois}
+        for fut in as_completed(futs):
+            results.append(fut.result())
+
+    for doi, payload in results:
+        if payload is not None:
+            papers = _apply_unpaywall(papers, doi, payload)
+    return papers
 
 
 def looks_like_pdf_url(url: str) -> bool:
@@ -337,23 +367,30 @@ def looks_like_pdf_url(url: str) -> bool:
     return any(hint in lowered for hint in PDF_HINTS)
 
 
-def _apply_unpaywall(papers: list[Paper], doi: str, payload: dict[str, Any]) -> None:
+def _apply_unpaywall(
+    papers: list[Paper], doi: str, payload: dict[str, Any]
+) -> list[Paper]:
     best = payload.get("best_oa_location") or {}
     pdf_url = best.get("url_for_pdf") or best.get("url")
     landing_url = best.get("url_for_landing_page")
     is_oa = payload.get("is_oa")
     oa_status = payload.get("oa_status")
-    for paper in papers:
+    result = list(papers)
+    for i, paper in enumerate(papers):
         if not paper.doi or paper.doi.lower() != doi.lower():
             continue
+        kwargs: dict[str, Any] = {}
         if oa_status:
-            paper.oa_status = oa_status
+            kwargs["oa_status"] = oa_status
         elif is_oa is not None:
-            paper.oa_status = "oa" if is_oa else "closed"
+            kwargs["oa_status"] = "oa" if is_oa else "closed"
         if pdf_url and looks_like_pdf_url(pdf_url):
-            paper.pdf_url = paper.pdf_url or pdf_url
+            kwargs["pdf_url"] = paper.pdf_url or pdf_url
         if landing_url:
-            paper.url = paper.url or landing_url
+            kwargs["url"] = paper.url or landing_url
+        if kwargs:
+            result[i] = replace(paper, **kwargs)
+    return result
 
 
 def filter_low_quality(papers: list[Paper]) -> list[Paper]:

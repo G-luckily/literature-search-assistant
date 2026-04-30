@@ -25,7 +25,7 @@ def test_build_plan_accepts_manual_keywords():
 
     assert plan.zh_keywords[0] == "文献计量"
     assert plan.en_keywords[0] == "bibliometrics"
-    assert plan.query_rounds["cnki"][0] == plan.queries["cnki"]
+    assert plan.query_rounds["openalex"][0] == plan.queries["openalex"]
 
 
 def test_extract_research_structure_elderly_ai():

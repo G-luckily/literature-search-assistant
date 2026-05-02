@@ -126,6 +126,9 @@ const els = {
   confirmPlanSearch: document.querySelector("#confirm-plan-search"),
   topNavLinks: [...document.querySelectorAll(".topbar-link[data-page]")],
   sidebarNavLinks: [...document.querySelectorAll(".sidebar-link[data-page]")],
+  searchProgressPanel: document.querySelector("#search-progress-panel"),
+  progressSourceList: document.querySelector("#progress-source-list"),
+  progressSummary: document.querySelector("#progress-summary"),
 };
 
 const sourceInputs = [...document.querySelectorAll('input[name="source"]')];
@@ -575,11 +578,12 @@ async function runSearch(externalPayload) {
   };
   _lastSearchPayload = payload;
   clearErrors();
+  resetProgress();
   setWorkflowStatus("检索中", "正在调用已选数据库并整理候选结果。");
   setFlowStep("search");
   setBusy(true, "正在检索，开放 API 可能需要几十秒。");
   try {
-    const data = await postJson("/api/search", payload);
+    const data = await runSearchStream(payload);
     state.plan = data.plan;
     state.papers = data.papers || [];
     state.sourceMeta = data.sourceMeta || {};
@@ -611,6 +615,7 @@ async function runSearch(externalPayload) {
       hasError: Object.keys(data.errors || {}).length > 0,
     });
   } catch (error) {
+    resetProgress();
     showError(error.message);
   } finally {
     setBusy(false);
@@ -627,6 +632,8 @@ async function runSearch(externalPayload) {
     } catch (e) {
       console.warn("Failed to save search history:", e);
     }
+    // Hide progress panel 2s after so user sees final summary
+    setTimeout(() => { els.searchProgressPanel.hidden = true; }, 2000);
   }
 }
 
@@ -2731,6 +2738,147 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+// ── Search Progress Panel ─────────────────────────────────
+
+const SOURCE_LABELS = {
+  openalex: "OpenAlex",
+  crossref: "Crossref",
+  semantic_scholar: "Semantic Scholar",
+  google_scholar: "Google Scholar",
+  web_of_science: "Web of Science",
+  zotero: "Zotero 文献库",
+};
+
+let _progressState = {};
+
+function resetProgress() {
+  _progressState = {};
+  els.searchProgressPanel.hidden = true;
+}
+
+function initProgress(sources) {
+  _progressState = { total: sources.length, done: 0, items: {} };
+  const list = els.progressSourceList;
+  list.innerHTML = "";
+  for (const src of sources) {
+    const label = SOURCE_LABELS[src] || src;
+    _progressState.items[src] = { status: "waiting", count: 0 };
+    const item = document.createElement("div");
+    item.className = "progress-source-item";
+    item.id = "progress-" + src;
+    item.innerHTML = `
+      <span class="progress-source-icon" id="picon-${src}">◯</span>
+      <span class="progress-source-name">${escapeHtml(label)}</span>
+      <span class="progress-source-detail" id="pdetail-${src}">等待中</span>
+      <span class="progress-source-bar" id="pbar-${src}">
+        <span class="progress-source-bar-fill" id="pfill-${src}" style="width:0%"></span>
+      </span>
+    `;
+    list.append(item);
+  }
+  updateProgressSummary();
+  els.searchProgressPanel.hidden = false;
+}
+
+function updateProgress(src, status, count, errorMsg) {
+  const item = _progressState.items[src];
+  if (!item) return;
+  item.status = status;
+  if (count !== undefined) item.count = count;
+
+  const icon = document.querySelector("#picon-" + src);
+  const detail = document.querySelector("#pdetail-" + src);
+  const fill = document.querySelector("#pfill-" + src);
+
+  switch (status) {
+    case "running":
+      if (icon) icon.textContent = "◌";
+      if (detail) detail.textContent = "搜索中...";
+      if (fill) { fill.style.width = "50%"; fill.className = "progress-source-bar-fill searching"; }
+      break;
+    case "complete":
+      if (icon) icon.textContent = "✓";
+      if (detail) detail.textContent = count + " 篇";
+      if (fill) { fill.style.width = "100%"; fill.className = "progress-source-bar-fill"; }
+      _progressState.done++;
+      break;
+    case "error":
+      if (icon) icon.textContent = "✗";
+      if (detail) detail.textContent = errorMsg || "出错";
+      if (fill) { fill.style.width = "100%"; fill.className = "progress-source-bar-fill error"; }
+      _progressState.done++;
+      break;
+  }
+  updateProgressSummary();
+}
+
+function updateProgressSummary() {
+  const s = _progressState;
+  if (els.progressSummary) {
+    els.progressSummary.textContent = `${s.done} / ${s.total} 已完成`;
+  }
+}
+
+// ── Streaming Search ─────────────────────────────────────
+
+async function runSearchStream(payload) {
+  const response = await fetch("/api/search-stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || "流式检索请求失败。");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+
+    for (const part of parts) {
+      if (!part.trim()) continue;
+      const lines = part.split("\n");
+      let eventType = "message";
+      let jsonData = "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) eventType = line.slice(7);
+        else if (line.startsWith("data: ")) jsonData = line.slice(6);
+      }
+      if (!jsonData) continue;
+      const data = JSON.parse(jsonData);
+
+      switch (eventType) {
+        case "sources":
+          initProgress(data.sources);
+          break;
+        case "running":
+          updateProgress(data.source, "running");
+          break;
+        case "complete":
+          updateProgress(data.source, "complete", data.paper_count);
+          break;
+        case "error":
+          updateProgress(data.source, "error", 0, data.message);
+          break;
+        case "done":
+          result = data;
+          break;
+      }
+    }
+  }
+  return result;
 }
 
 // ── Analysis Charts (SVG) ──────────────────────────────────

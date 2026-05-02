@@ -110,6 +110,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 self._handle_update_llm_config(payload)
             elif parsed.path == "/api/config/sources":
                 self._handle_update_source_config(payload)
+            elif parsed.path == "/api/search-stream":
+                self._handle_search_stream(payload)
             elif parsed.path == "/api/export":
                 self._handle_export(payload)
             elif parsed.path == "/api/archive/delete":
@@ -301,6 +303,118 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             "sourceText": result.source_text,
             "searchDimensions": result.search_dimensions,
             "suggestedQueries": result.suggested_queries,
+        })
+
+    def _handle_search_stream(self, payload: dict[str, Any]) -> None:
+        need = required_text(payload, "need")
+        sources = list_of_text(payload.get("sources"))
+        selected_sources = sources or list(
+            self.server.config.general.enabled_sources
+        )
+        limit = int(
+            payload.get("limit") or self.server.config.general.max_results_per_source
+        )
+        limit = max(1, min(limit, 1000))
+        from_year = optional_int(payload, "fromYear")
+        prefer_recent = optional_bool(payload, "preferRecent")
+        use_llm = optional_bool(payload, "useLlm")
+        file_context = optional_text(payload, "fileContext")
+        search_dimensions = payload.get("searchDimensions")
+        suggested_queries = payload.get("suggestedQueries")
+        created_at = datetime.now()
+
+        # SSE headers
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+        def _sse(event_type: str, data: dict[str, Any]) -> None:
+            msg = (
+                f"event: {event_type}\n"
+                f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+            )
+            self.wfile.write(msg.encode("utf-8"))
+            self.wfile.flush()
+
+        # Emit source list immediately
+        _sse("sources", {"sources": selected_sources})
+
+        run = run_search(
+            need,
+            config=self.server.config,
+            sources=selected_sources,
+            limit=limit,
+            zh_keywords=list_of_text(payload.get("zhKeywords")),
+            en_keywords=list_of_text(payload.get("enKeywords")),
+            use_llm=use_llm,
+            from_year=from_year,
+            prefer_recent=prefer_recent,
+            state_root=self.server.project_root,
+            file_context=file_context,
+            search_dimensions=search_dimensions,
+            suggested_queries=suggested_queries,
+            progress_callback=lambda src, evt, d: _sse(
+                evt, {"source": src, **d}
+            ),
+        )
+        run_id, out_dir = create_timestamped_run_dir(
+            self.server.project_root, created_at
+        )
+        effective_prefer_recent = (
+            self.server.config.general.prefer_recent
+            if prefer_recent is None
+            else prefer_recent
+        )
+        effective_use_llm = (
+            self.server.config.llm.enabled if use_llm is None else use_llm
+        )
+        write_run(run, out_dir)
+        write_json(
+            out_dir / "run_meta.json",
+            {
+                "id": run_id,
+                "createdAt": created_at.isoformat(),
+                "need": need,
+                "sources": selected_sources,
+                "limit": limit,
+                "fromYear": from_year,
+                "preferRecent": effective_prefer_recent,
+                "useLlm": effective_use_llm,
+                "status": "partial" if run.errors else "success",
+                "errors": run.errors,
+                "paperCount": len(run.papers),
+            },
+        )
+        db.init(self.server.project_root / "runs" / "litassist.db")
+        db.archive_save(
+            run_id=run_id,
+            need=need,
+            status="partial" if run.errors else "success",
+            sources=selected_sources,
+            zh_keywords=list_of_text(payload.get("zhKeywords")),
+            en_keywords=list_of_text(payload.get("enKeywords")),
+            from_year=from_year,
+            limit_count=limit,
+            prefer_recent=effective_prefer_recent,
+            use_llm=effective_use_llm,
+            plan=run.plan.to_dict(),
+            papers=[paper.to_dict() for paper in run.papers],
+            errors=run.errors,
+            source_meta=serialize_source_meta(run.source_meta),
+            created_at=created_at.isoformat(),
+        )
+
+        # Send final complete event
+        _sse("done", {
+            "runId": run_id,
+            "plan": run.plan.to_dict(),
+            "papers": [paper.to_dict() for paper in run.papers],
+            "errors": run.errors,
+            "sourceMeta": serialize_source_meta(run.source_meta),
+            "reportUrl": f"/runs/web/{run_id}/report.md",
         })
 
     def _handle_export(self, payload: dict[str, Any]) -> None:

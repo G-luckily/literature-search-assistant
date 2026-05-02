@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -45,6 +46,9 @@ def run_search(
     file_context: str | None = None,
     search_dimensions: list[dict] | None = None,
     suggested_queries: dict[str, str] | None = None,
+    progress_callback: (
+        Callable[[str, str, dict[str, Any]], None] | None
+    ) = None,
 ) -> SearchRun:
     config = _runtime_config(config, from_year=from_year, prefer_recent=prefer_recent)
     resolved_state_root = Path(state_root or Path.cwd()).resolve()
@@ -69,6 +73,8 @@ def run_search(
     def _search_one(
         source: str,
     ) -> tuple[str, list[Paper], str | None, dict[str, Any]]:
+        if progress_callback:
+            progress_callback(source, "running", {"source": source})
         searcher = searchers.get(source)
         if not searcher:
             return source, [], f"Unknown or unavailable source: {source}", {}
@@ -173,6 +179,11 @@ def run_search(
             if error_msg:
                 errors[source] = error_msg
             source_meta[source] = meta
+            if progress_callback:
+                if error_msg:
+                    progress_callback(source, "error", {"message": error_msg})
+                else:
+                    progress_callback(source, "complete", {"paper_count": len(local_papers)})
 
     papers = _filter_by_year(papers, config.general.from_year)
     deduped = dedupe_papers(papers, prefer_recent=config.general.prefer_recent)

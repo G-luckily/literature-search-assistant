@@ -22,6 +22,7 @@ from .config import (
     save_llm_config,
     save_source_config,
 )
+from .export import papers_to_bibtex, papers_to_csv, papers_to_ris
 from .file_analyzer import FileAnalysisError, analyze_file
 from .models import Paper
 from .pipeline import _build_search_plan, run_search
@@ -109,6 +110,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 self._handle_update_llm_config(payload)
             elif parsed.path == "/api/config/sources":
                 self._handle_update_source_config(payload)
+            elif parsed.path == "/api/export":
+                self._handle_export(payload)
             elif parsed.path == "/api/archive/delete":
                 self._handle_archive_delete(payload)
             else:
@@ -299,6 +302,41 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             "searchDimensions": result.search_dimensions,
             "suggestedQueries": result.suggested_queries,
         })
+
+    def _handle_export(self, payload: dict[str, Any]) -> None:
+        fmt = payload.get("format", "bibtex")
+        papers = payload.get("papers", [])
+        if not isinstance(papers, list) or not papers:
+            raise ValueError("No papers to export")
+        if fmt == "bibtex":
+            content = papers_to_bibtex(papers)
+            mimetype = "application/x-bibtex"
+            filename = "export.bib"
+        elif fmt == "csv":
+            content = papers_to_csv(papers)
+            mimetype = "text/csv"
+            filename = "export.csv"
+        elif fmt == "ris":
+            content = papers_to_ris(papers)
+            mimetype = "application/x-research-info-systems"
+            filename = "export.ris"
+        else:
+            raise ValueError(f"Unsupported format: {fmt}")
+        self._download(content, mimetype, filename)
+
+    def _download(
+        self, content: str, content_type: str, filename: str
+    ) -> None:
+        data = content.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header(
+            "Content-Disposition",
+            f'attachment; filename="{filename}"',
+        )
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _handle_import_zotero(self, payload: dict[str, Any]) -> None:
         papers_payload = payload.get("papers")

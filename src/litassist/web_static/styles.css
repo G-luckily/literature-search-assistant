@@ -1773,6 +1773,92 @@ button:disabled {
   flex: 0 0 190px;
 }
 
+/* ── Export button group ──────────────────────────── */
+.export-group {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.export-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.export-btn:hover:not(:disabled) {
+  background: var(--teal);
+  color: #fff;
+  border-color: var(--teal);
+}
+
+.export-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Analysis panel ──────────────────────────────── */
+.analysis-panel {
+  margin-top: 16px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  transition: all 0.3s ease;
+}
+
+.analysis-panel.collapsed .analysis-charts {
+  display: none;
+}
+
+.analysis-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.analysis-panel-header h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.analysis-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.analysis-chart-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.analysis-chart-card h5 {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.analysis-svg {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
 .compact-check {
   align-items: center;
   min-height: 48px;

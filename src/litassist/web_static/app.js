@@ -81,6 +81,9 @@ const els = {
   filterText: document.querySelector("#filter-text"),
   sortBy: document.querySelector("#sort-by"),
   pdfOnly: null,
+  exportBibtex: document.querySelector("#export-bibtex"),
+  exportCsv: document.querySelector("#export-csv"),
+  exportRis: document.querySelector("#export-ris"),
   selectVisible: document.querySelector("#select-visible"),
   clearSelection: document.querySelector("#clear-selection"),
   saveSelected: document.querySelector("#save-selected"),
@@ -154,6 +157,20 @@ els.selectVisible.addEventListener("click", () => selectVisiblePapers());
 els.clearSelection.addEventListener("click", () => clearSelection());
 els.saveSelected.addEventListener("click", () => saveSelectedPapers());
 els.savedFilterText.addEventListener("input", () => renderSavedPapers());
+els.exportBibtex.addEventListener("click", () => exportPapers("bibtex"));
+els.exportCsv.addEventListener("click", () => exportPapers("csv"));
+els.exportRis.addEventListener("click", () => exportPapers("ris"));
+const analysisToggle = document.getElementById("analysis-toggle");
+if (analysisToggle) {
+  analysisToggle.addEventListener("click", () => {
+    const panel = document.getElementById("analysis-panel");
+    if (panel) {
+      const isOpen = !panel.classList.contains("collapsed");
+      panel.classList.toggle("collapsed", isOpen);
+      analysisToggle.textContent = isOpen ? "展开" : "收起";
+    }
+  });
+}
 els.savedAuthorFilter.addEventListener("input", () => renderSavedPapers());
 els.savedYearFilter.addEventListener("input", () => renderSavedPapers());
 els.savedSourceFilter.addEventListener("input", () => renderSavedPapers());
@@ -571,6 +588,7 @@ async function runSearch(externalPayload) {
     renderPlan(data.plan);
     renderErrors(data.errors || {});
     renderSourceSummary(data.errors || {}, state.sourceMeta);
+    renderCharts(state.papers);
     updateReportLink(data.reportUrl);
     applyResultControls();
     setFlowStep("search");
@@ -657,6 +675,49 @@ async function importZotero() {
       renderPapers(state.visiblePapers);
       renderSavedPapers();
     }
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function exportPapers(format) {
+  const papers = state.selectedKeys.size
+    ? state.papers.filter((paper) => state.selectedKeys.has(paperKey(paper)))
+    : state.papers;
+  if (!papers.length) {
+    setStatus("没有可导出的文献。");
+    return;
+  }
+  setBusy(true, `正在导出 ${papers.length} 篇文献…`);
+  try {
+    const response = await fetch("/api/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format,
+        papers: papers.map((p) => {
+          const { raw, ...rest } = p;
+          return rest;
+        }),
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "导出失败。" }));
+      throw new Error(err.error || "导出失败。");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `export.${format === "bibtex" ? "bib" : format}`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const ext = format.toUpperCase();
+    setStatus(`已导出 ${papers.length} 篇文献（${ext}）。`);
   } catch (error) {
     showError(error.message);
   } finally {
@@ -1670,6 +1731,10 @@ function updateSelectionUi() {
   els.selectVisible.disabled = state.visiblePapers.length === 0;
   els.clearSelection.disabled = selected === 0;
   els.saveSelected.disabled = selected === 0;
+  const hasPapers = state.papers.length > 0;
+  els.exportBibtex.disabled = !hasPapers;
+  els.exportCsv.disabled = !hasPapers;
+  els.exportRis.disabled = !hasPapers;
   updateDashboard();
 }
 
@@ -1817,6 +1882,7 @@ function restoreWorkspaceSnapshot() {
     renderPlan(state.plan);
   }
   updateReportLink(snapshot.reportUrl || "");
+  renderCharts(state.papers);
   applyResultControls();
   if (snapshot.status) {
     setStatus(snapshot.status);
@@ -2374,6 +2440,7 @@ function openArchiveTask(entry) {
   renderPlan(state.plan);
   renderErrors(entry.errors || {});
   renderSourceSummary(entry.errors || {}, state.sourceMeta);
+  renderCharts(state.papers);
   updateReportLink(entry.reportUrl || "");
   applyResultControls();
   setFlowStep(state.papers.length ? "search" : state.plan ? "plan" : "ask");
@@ -2664,6 +2731,134 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+// ── Analysis Charts (SVG) ──────────────────────────────────
+
+function renderCharts(papers) {
+  renderYearChart(papers);
+  renderSourceChart(papers);
+  renderCitationChart(papers);
+  const panel = document.getElementById("analysis-panel");
+  if (panel) {
+    panel.hidden = papers.length === 0;
+  }
+}
+
+function renderYearChart(papers) {
+  const svg = document.getElementById("chart-year-svg");
+  if (!svg) return;
+  const years = {};
+  for (const p of papers) {
+    const y = p.year;
+    if (y) years[y] = (years[y] || 0) + 1;
+  }
+  const entries = Object.entries(years).sort((a, b) => Number(a[0]) - Number(b[0]));
+  if (!entries.length) { svg.innerHTML = ""; return; }
+
+  const margin = 30;
+  const W = 370;
+  const H = 170;
+  const maxVal = Math.max(...entries.map((e) => e[1])) || 1;
+  const barW = Math.min(30, (W - margin - 10) / entries.length - 4);
+  const colors = ["#2dd4bf", "#0ea5e9", "#8b5cf6", "#f59e0b", "#ef4444"];
+
+  let html = `<line x1="${margin}" y1="10" x2="${margin}" y2="${H - 10}" stroke="#2a2a3a" stroke-width="1"/>
+    <line x1="${margin}" y1="${H - 10}" x2="${W}" y2="${H - 10}" stroke="#2a2a3a" stroke-width="1"/>`;
+  entries.forEach(([year, count], i) => {
+    const barH = (count / maxVal) * (H - 40);
+    const x = margin + 4 + i * (barW + 4);
+    const y = H - 10 - barH;
+    const color = colors[i % colors.length];
+    html += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="3" fill="${color}" opacity="0.85">
+      <title>${year}: ${count} 篇</title></rect>`;
+    if (barW > 8) {
+      html += `<text x="${x + barW / 2}" y="${H - 20}" text-anchor="middle" font-size="8" fill="#94a3b8">${year}</text>`;
+    } else if (i % 2 === 0) {
+      html += `<text x="${x + barW / 2}" y="${H - 20}" text-anchor="middle" font-size="7" fill="#94a3b8">${year}</text>`;
+    }
+  });
+  svg.innerHTML = html;
+}
+
+function renderSourceChart(papers) {
+  const svg = document.getElementById("chart-source-svg");
+  if (!svg) return;
+  const sources = {};
+  for (const p of papers) {
+    const srcList = p.sources || [p.source];
+    for (const s of srcList) {
+      if (s) sources[s] = (sources[s] || 0) + 1;
+    }
+  }
+  const entries = Object.entries(sources).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  if (!entries.length) { svg.innerHTML = ""; return; }
+
+  const total = entries.reduce((s, e) => s + e[1], 0) || 1;
+  const colors = ["#2dd4bf", "#0ea5e9", "#8b5cf6", "#f59e0b", "#ef4444", "#34d399"];
+  const cx = 80, cy = 100, r = 65;
+  let html = "";
+  let cumulative = 0;
+
+  entries.forEach(([key, count], i) => {
+    const angle = (cumulative / total) * 360;
+    const sweep = (count / total) * 360;
+    cumulative += count;
+    const a1 = (angle - 90) * (Math.PI / 180);
+    const a2 = ((angle + sweep) - 90) * (Math.PI / 180);
+    const x1 = cx + r * Math.cos(a1);
+    const y1 = cy + r * Math.sin(a1);
+    const x2 = cx + r * Math.cos(a2);
+    const y2 = cy + r * Math.sin(a2);
+    const large = sweep > 180 ? 1 : 0;
+    const color = colors[i % colors.length];
+    html += `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}" opacity="0.85">
+      <title>${sourceLabel(key)}: ${count} 篇 (${Math.round((count / total) * 100)}%)</title></path>`;
+  });
+
+  // Legend on the right
+  const lx = 180, ly = 20;
+  entries.forEach(([key, count], i) => {
+    const color = colors[i % colors.length];
+    html += `<rect x="${lx}" y="${ly + i * 22}" width="10" height="10" rx="2" fill="${color}"/>`;
+    html += `<text x="${lx + 16}" y="${ly + i * 22 + 9}" font-size="10" fill="#94a3b8">${sourceLabel(key)}: ${count}</text>`;
+  });
+  svg.innerHTML = html;
+}
+
+function renderCitationChart(papers) {
+  const svg = document.getElementById("chart-citation-svg");
+  if (!svg) return;
+  const points = papers
+    .map((p) => ({ x: p.year || 0, y: p.cited_by_count || 0, title: p.title || "" }))
+    .filter((p) => p.x > 0)
+    .sort((a, b) => a.x - b.x);
+  if (points.length < 2) { svg.innerHTML = ""; return; }
+
+  const margin = { top: 10, right: 10, bottom: 25, left: 35 };
+  const W = 370, H = 170;
+  const maxY = Math.max(...points.map((p) => p.y)) || 1;
+  const minX = Math.min(...points.map((p) => p.x));
+  const maxX = Math.max(...points.map((p) => p.x));
+  const rangeX = Math.max(maxX - minX, 1);
+
+  let html = `<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${H - margin.bottom}" stroke="#2a2a3a" stroke-width="1"/>
+    <line x1="${margin.left}" y1="${H - margin.bottom}" x2="${W}" y2="${H - margin.bottom}" stroke="#2a2a3a" stroke-width="1"/>`;
+
+  // Y axis ticks
+  for (let i = 0; i <= 4; i++) {
+    const val = Math.round((maxY / 4) * i);
+    const y = H - margin.bottom - (i / 4) * (H - margin.top - margin.bottom);
+    html += `<text x="${margin.left - 4}" y="${y + 3}" text-anchor="end" font-size="8" fill="#94a3b8">${val}</text>`;
+  }
+
+  points.forEach((p) => {
+    const px = margin.left + ((p.x - minX) / rangeX) * (W - margin.left - margin.right);
+    const py = H - margin.bottom - (p.y / maxY) * (H - margin.top - margin.bottom);
+    html += `<circle cx="${px}" cy="${py}" r="2.5" fill="#2dd4bf" opacity="0.6">
+      <title>${escapeHtml(p.title || "")}: ${p.y} 次引用 (${p.x})</title></circle>`;
+  });
+  svg.innerHTML = html;
 }
 
 // ── File Upload / Multimodal Input ───────────────────────────

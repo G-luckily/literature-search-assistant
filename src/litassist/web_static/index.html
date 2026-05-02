@@ -255,6 +255,11 @@
                           <option value="recent">时间</option>
                           <option value="citations">引用量</option>
                         </select>
+                        <div class="export-group">
+                          <button id="export-bibtex" class="btn-xs export-btn" title="导出 BibTeX">BibTeX</button>
+                          <button id="export-csv" class="btn-xs export-btn" title="导出 CSV">CSV</button>
+                          <button id="export-ris" class="btn-xs export-btn" title="导出 RIS">RIS</button>
+                        </div>
                       </div>
                     </div>
                     <div class="bulk-actions-bar">
@@ -266,6 +271,26 @@
                       <p>检索结果将呈现在此处。</p>
                     </div>
                     <div id="papers" class="papers-grid"></div>
+                    <div id="analysis-panel" class="analysis-panel" hidden>
+                      <div class="analysis-panel-header">
+                        <h4>结果分析</h4>
+                        <button type="button" id="analysis-toggle" class="btn-xs">收起</button>
+                      </div>
+                      <div class="analysis-charts">
+                        <div class="analysis-chart-card" id="chart-year">
+                          <h5>年份分布</h5>
+                          <svg id="chart-year-svg" viewBox="0 0 400 200" class="analysis-svg"></svg>
+                        </div>
+                        <div class="analysis-chart-card" id="chart-source">
+                          <h5>来源分布</h5>
+                          <svg id="chart-source-svg" viewBox="0 0 400 200" class="analysis-svg"></svg>
+                        </div>
+                        <div class="analysis-chart-card" id="chart-citation">
+                          <h5>引用分布</h5>
+                          <svg id="chart-citation-svg" viewBox="0 0 400 200" class="analysis-svg"></svg>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </section>
             </div>

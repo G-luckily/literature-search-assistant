@@ -279,6 +279,7 @@
                           <button id="export-bibtex" class="btn-xs export-btn" title="导出 BibTeX">BibTeX</button>
                           <button id="export-csv" class="btn-xs export-btn" title="导出 CSV">CSV</button>
                           <button id="export-ris" class="btn-xs export-btn" title="导出 RIS">RIS</button>
+                          <button id="review-btn" class="btn-xs export-btn review-btn" title="生成文献综述">综述</button>
                         </div>
                       </div>
                     </div>
@@ -309,6 +310,15 @@
                           <h5>引用分布</h5>
                           <svg id="chart-citation-svg" viewBox="0 0 400 200" class="analysis-svg"></svg>
                         </div>
+                      </div>
+                    </div>
+                    <div id="review-panel" class="review-panel" hidden>
+                      <div class="review-panel-header">
+                        <h4>文献综述</h4>
+                        <button type="button" id="review-close" class="btn-xs">关闭</button>
+                      </div>
+                      <div id="review-content" class="review-content markdown-body">
+                        <div class="review-loading">正在生成综述...</div>
                       </div>
                     </div>
                   </div>

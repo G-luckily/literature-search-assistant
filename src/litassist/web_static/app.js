@@ -84,6 +84,10 @@ const els = {
   exportBibtex: document.querySelector("#export-bibtex"),
   exportCsv: document.querySelector("#export-csv"),
   exportRis: document.querySelector("#export-ris"),
+  reviewBtn: document.querySelector("#review-btn"),
+  reviewPanel: document.querySelector("#review-panel"),
+  reviewContent: document.querySelector("#review-content"),
+  reviewClose: document.querySelector("#review-close"),
   selectVisible: document.querySelector("#select-visible"),
   clearSelection: document.querySelector("#clear-selection"),
   saveSelected: document.querySelector("#save-selected"),
@@ -175,6 +179,8 @@ els.savedFilterText.addEventListener("input", () => renderSavedPapers());
 els.exportBibtex.addEventListener("click", () => exportPapers("bibtex"));
 els.exportCsv.addEventListener("click", () => exportPapers("csv"));
 els.exportRis.addEventListener("click", () => exportPapers("ris"));
+els.reviewBtn.addEventListener("click", () => generateReview());
+els.reviewClose.addEventListener("click", () => { els.reviewPanel.hidden = true; });
 const analysisToggle = document.getElementById("analysis-toggle");
 if (analysisToggle) {
   analysisToggle.addEventListener("click", () => {
@@ -742,6 +748,58 @@ async function exportPapers(format) {
   } finally {
     setBusy(false);
   }
+}
+
+async function generateReview() {
+  const papers = state.selectedKeys.size
+    ? state.papers.filter((paper) => state.selectedKeys.has(paperKey(paper)))
+    : state.papers;
+  if (!papers.length) {
+    setStatus("没有可生成综述的文献。");
+    return;
+  }
+  els.reviewPanel.hidden = false;
+  els.reviewContent.innerHTML = "<div class='review-loading'>正在生成综述...</div>";
+  setBusy(true, `正在为 ${papers.length} 篇文献生成综述。`);
+  try {
+    const data = await postJson("/api/review", {
+      need: state.plan?.need || "",
+      papers: papers.map((p) => {
+        const { raw, ...rest } = p;
+        return rest;
+      }),
+    });
+    els.reviewContent.innerHTML = simpleMarkdown(data.review);
+    setStatus("综述已生成。");
+  } catch (error) {
+    els.reviewContent.innerHTML = `<div class="error-box" style="margin:0">${escapeHtml(error.message)}</div>`;
+    showError(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function simpleMarkdown(text) {
+  let html = escapeHtml(text);
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, "<pre><code>$2</code></pre>");
+  // Headers
+  html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+  html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+  html = html.replace(/^# (.+)$/gm, "<h2>$1</h2>");
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // Unordered lists
+  html = html.replace(/^- (.+)$/gm, "<li>$1</li>");
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>");
+  // Ordered lists
+  html = html.replace(/^\d+\. (.+)$/gm, "<li>$1</li>");
+  // Paragraphs (double newlines)
+  html = html.replace(/\n\n/g, "</p><p>");
+  html = "<p>" + html + "</p>";
+  // Fix nested paragraphs from list items
+  html = html.replace(/<li><p>/g, "<li>").replace(/<\/p><\/li>/g, "</li>");
+  return html;
 }
 
 async function loadConfig() {

@@ -27,6 +27,7 @@ from .file_analyzer import FileAnalysisError, analyze_file
 from .models import Paper
 from .pipeline import _build_search_plan, run_search
 from .report import write_json, write_run
+from .review import ReviewGenerationError, generate_review
 from .semantic_scholar_state import get_budget_state
 from .web_helpers import (
     api_key_update,
@@ -114,6 +115,8 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
                 self._handle_search_stream(payload)
             elif parsed.path == "/api/export":
                 self._handle_export(payload)
+            elif parsed.path == "/api/review":
+                self._handle_review(payload)
             elif parsed.path == "/api/archive/delete":
                 self._handle_archive_delete(payload)
             else:
@@ -416,6 +419,14 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
             "sourceMeta": serialize_source_meta(run.source_meta),
             "reportUrl": f"/runs/web/{run_id}/report.md",
         })
+
+    def _handle_review(self, payload: dict[str, Any]) -> None:
+        need = required_text(payload, "need")
+        papers = payload.get("papers", [])
+        if not isinstance(papers, list) or not papers:
+            raise ValueError("No papers to review.")
+        review = generate_review(need, papers, self.server.config.llm)
+        self._json({"review": review})
 
     def _handle_export(self, payload: dict[str, Any]) -> None:
         fmt = payload.get("format", "bibtex")

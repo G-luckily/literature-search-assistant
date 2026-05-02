@@ -133,6 +133,12 @@ const els = {
   searchProgressPanel: document.querySelector("#search-progress-panel"),
   progressSourceList: document.querySelector("#progress-source-list"),
   progressSummary: document.querySelector("#progress-summary"),
+  logToggle: document.querySelector("#log-toggle"),
+  logPanel: document.querySelector("#log-panel"),
+  logClose: document.querySelector("#log-close"),
+  logEntries: document.querySelector("#log-entries"),
+  logClear: document.querySelector("#log-clear"),
+  logCount: document.querySelector("#log-count"),
 };
 
 const sourceInputs = [...document.querySelectorAll('input[name="source"]')];
@@ -181,6 +187,15 @@ els.exportCsv.addEventListener("click", () => exportPapers("csv"));
 els.exportRis.addEventListener("click", () => exportPapers("ris"));
 els.reviewBtn.addEventListener("click", () => generateReview());
 els.reviewClose.addEventListener("click", () => { els.reviewPanel.hidden = true; });
+els.logToggle.addEventListener("click", () => {
+  els.logPanel.hidden = !els.logPanel.hidden;
+  if (!els.logPanel.hidden) pollLogs();
+});
+els.logClose.addEventListener("click", () => { els.logPanel.hidden = true; });
+els.logClear.addEventListener("click", () => {
+  els.logEntries.innerHTML = "<div class='log-empty'>暂无日志。</div>";
+  if (els.logCount) els.logCount.textContent = "0 条";
+});
 const analysisToggle = document.getElementById("analysis-toggle");
 if (analysisToggle) {
   analysisToggle.addEventListener("click", () => {
@@ -223,6 +238,10 @@ setActivePage(resolveInitialPage(), false);
 loadConfig();
 loadArchive();
 updateDashboard();
+// Poll logs every 3 seconds while panel is open
+setInterval(() => {
+  if (els.logPanel && !els.logPanel.hidden) pollLogs();
+}, 3000);
 renderSavedPapers();
 renderHistory();
 loadSearchHistory();
@@ -2808,6 +2827,33 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+// ── Log Panel ────────────────────────────────────────────
+
+async function pollLogs() {
+  try {
+    const response = await fetch("/api/logs");
+    if (!response.ok) return;
+    const data = await response.json();
+    const logs = data.logs || [];
+    if (!logs.length) {
+      if (els.logCount) els.logCount.textContent = "0 条";
+      return;
+    }
+    const container = els.logEntries;
+    container.innerHTML = "";
+    for (const entry of logs) {
+      const div = document.createElement("div");
+      div.className = "log-entry " + (entry.level || "INFO");
+      div.textContent = entry.time + " [" + entry.level + "] " + entry.message;
+      container.append(div);
+    }
+    container.scrollTop = container.scrollHeight;
+    if (els.logCount) els.logCount.textContent = logs.length + " 条";
+  } catch {
+    // Silently fail - log viewer is non-critical
+  }
 }
 
 // ── Search Progress Panel ─────────────────────────────────

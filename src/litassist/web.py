@@ -23,6 +23,7 @@ from .config import (
     save_source_config,
 )
 from .export import papers_to_bibtex, papers_to_csv, papers_to_ris
+from .log_capture import get_recent_logs, install_log_capture
 from .file_analyzer import FileAnalysisError, analyze_file
 from .models import Paper
 from .pipeline import _build_search_plan, run_search
@@ -75,6 +76,9 @@ class LiteratureRequestHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/health":
                 self._json({"ok": True})
+                return
+            if parsed.path == "/api/logs":
+                self._json({"logs": get_recent_logs()})
                 return
             if parsed.path == "/api/config":
                 self._json(self._config_payload())
@@ -737,6 +741,7 @@ def serve(
         Path(config_path).resolve() if config_path else root / "config.toml"
     )
     config = load_config(resolved_config_path)
+    install_log_capture()
     server = LiteratureWebServer(
         (host, port),
         config=config,

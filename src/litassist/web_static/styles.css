@@ -197,9 +197,8 @@ h4 {
   min-height: 72px;
   padding: 0 30px;
   display: grid;
-  grid-template-columns: auto auto;
-  justify-content: space-between;
-  gap: 28px;
+  grid-template-columns: auto 1fr auto;
+  gap: 20px;
   align-items: center;
   background: var(--topbar-bg);
   backdrop-filter: blur(28px) saturate(1.5);
@@ -215,6 +214,44 @@ h4 {
   color: var(--teal);
   font-size: 24px;
   font-weight: 800;
+}
+
+.topbar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 400px;
+  justify-self: center;
+  width: 100%;
+}
+
+.topbar-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--muted);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.topbar-search-input {
+  width: 100%;
+  padding: 8px 12px 8px 36px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.topbar-search-input::placeholder {
+  color: var(--muted);
+}
+
+.topbar-search-input:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 2px var(--teal-soft);
 }
 
 .topbar-nav {

@@ -136,6 +136,18 @@ const sourceInputs = [...document.querySelectorAll('input[name="source"]')];
 els.themeToggle.addEventListener("click", () => toggleTheme());
 els.planButton.addEventListener("click", () => runPlan());
 els.searchButton.addEventListener("click", () => runSearch());
+// Quick search in top bar: fill need and run search, switch to search page
+const quickSearchEl = document.querySelector("#quick-search");
+if (quickSearchEl) {
+  quickSearchEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && quickSearchEl.value.trim()) {
+      els.need.value = quickSearchEl.value.trim();
+      quickSearchEl.value = "";
+      switchPage("search");
+      runSearch();
+    }
+  });
+}
 els.dryRunButton.addEventListener("click", () => importZotero());
 els.saveLlmConfig.addEventListener("click", () => saveLlmConfig());
 els.saveSourceConfig.addEventListener("click", () => saveSourceConfig());

@@ -14,8 +14,13 @@ class MemoryLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
+            formatter = self.formatter
+            if formatter:
+                time_str = formatter.formatTime(record, "%H:%M:%S")
+            else:
+                time_str = record.asctime or ""
             self.records.append({
-                "time": self.formatTime(record, "%H:%M:%S"),
+                "time": time_str,
                 "level": record.levelname,
                 "name": record.name,
                 "message": record.getMessage(),
